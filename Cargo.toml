@@ -1,20 +1,20 @@
 [package]
 name = "nsq-client"
 version = "0.1.5"
-authors = ["Flavio Oliveira <rusty@wisespace.io>"]
+authors = ["Alessandro Cresto Miseroglio <alex179ohm@gmail.com>"]
 
 description = "Rust client for the NSQ realtime message processing system"
-license = "MIT OR Apache-2.0"
-keywords = ["nsq", "queue", "tokio", "asynchronous"]
+license = "MIT"
+keywords = ["nsq", "queue", "tokio", "actix",  "asynchronous"]
 categories = ["caching"]
-repository = "https://github.com/wisespace-io/nsqueue"
+repository = "https://github.com/alex179ohm/nsq-client-rs"
 readme = "README.md"
 
 [badges]
-travis-ci = { repository = "wisespace-io/nsqueue" }
+travis-ci = { repository = "alex179ohm/nsq-client-rs" }
 
 [lib]
-name = "nsqueue"
+name = "nsq-client"
 path = "src/lib.rs"
 
 [dependencies]
@@ -24,7 +24,6 @@ futures = "^0.1"
 tokio-io = "^0.1"
 tokio-core = "^0.1"
 tokio-codec = "^0.1"
-tokio-tcp = "^0.1"
 backoff = "0.1"
 byteorder = "1.0.0"
 hostname = "^0.1"
