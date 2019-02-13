@@ -1,21 +1,20 @@
 [package]
 name = "nsq-client"
-version = "0.1.5"
+version = "0.1.0"
 authors = ["Alessandro Cresto Miseroglio <alex179ohm@gmail.com>"]
-
-description = "Rust client for the NSQ realtime message processing system"
+description = """
+Rust client for the NSQ realtime message processing system"
+"""
 license = "MIT"
-keywords = ["nsq", "queue", "tokio", "actix",  "asynchronous"]
-categories = ["caching"]
+keywords = ["nsq", "queue", "tokio", "actix",  "async", "actor"]
+categories = ["caching", "asynchronous"]
 repository = "https://github.com/alex179ohm/nsq-client-rs"
 readme = "README.md"
+exclude = [".gitignore", ".travis.yml", ".cargo/config", ".appveyor.yml"]
 
 [badges]
 travis-ci = { repository = "alex179ohm/nsq-client-rs" }
-
-[lib]
-name = "nsq-client"
-path = "src/lib.rs"
+maintenance = { state = "actively-developed" }
 
 [dependencies]
 log = "0.4"
