@@ -13,6 +13,7 @@ readme = "README.md"
 exclude = [".gitignore", ".travis.yml", ".cargo/config", ".appveyor.yml"]
 
 [badges]
+appveyor = { repository = "alex179ohm/nsq-client-rs" }
 travis-ci = { repository = "alex179ohm/nsq-client-rs" }
 maintenance = { state = "actively-developed" }
 
