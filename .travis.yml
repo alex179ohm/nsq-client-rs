@@ -3,5 +3,4 @@ rust:
     - nightly
     - stable
     - beta
-cache: cargo
 sudo: false
