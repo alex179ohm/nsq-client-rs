@@ -14,39 +14,44 @@ Nsq-client it's designed to support by default multiple Readers for Multiple Con
 extern crate nsqueue;
 extern crate actix;
 
+use std::sync::Arc;
+
 use actix::prelude::*;
+
 use nsqueue::{Connection, Msg, Fin, Subscribe, Config};
 
 struct MyReader {
-    conn: String,
+	pub conn: Arc<Addr<Connection>>,
 }
 
 impl Actor for MyReader {
     type Context = Context<Self>;
     fn started(&mut self, ctx: &mut Self::Context) {
-        self.subscribe::<Msg>(ctx, self.conn);
+        self.subscribe::<Msg>(ctx, self.conn.clone());
     }
 }
 
 impl Handler<Msg> for MyReader {
     fn handle(&mut self, msg: Msg, _: &mut Self::Context) {
-        let m = msg.msg.clone();
-        println!("MyReader received {:?}", m);
-        m.conn.do_send(Fin(m.id));
+        println!("MyReader received {:?}", msg);
+        self.conn.do_send(Fin(msg.id));
     }
 }
 
 fn main() {
-    let sys = System::new("reader");
-    let nsqd_addr = "0.0.0.0:4150".to_owned();
-    let config = Config::default().client_id("consumer-1");
-    let _c = Supervisor::start(|_| Connection::new(
-        "test", // topic
-        "test", // channel
-        &nsqd_addr.clone(), // nsqd tcp address
-        Some(config),
+    let sys = System::new("consumer");
+    let config = Config::default().client_id("consumer");
+    let c = Supervisor::start(|_| Connection::new(
+        "test", // <- topic
+        "test", // <- channel
+        "0.0.0.0:4150", // <- nsqd tcp address
+        Some(config), // <- config (Optional)
+	Some(2) // <- RDY (Optional default: 1)
     ));
-    let _ = MyReader{ conn: nsqd_addr }.start();
+    let conn = Arc::new(c);
+    let _ = MyReader{ conn: conn.clone() }.start(); // <- Same thread reader
+    let _ = Arbiter::start(|_| MyReader{ conn: conn }); // <- start another reader in different thread
+    sys.run();
 }
 ```
 ### launch the reader
