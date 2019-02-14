@@ -6,7 +6,7 @@ description = """
 Rust client for the NSQ realtime message processing system"
 """
 license = "MIT"
-keywords = ["nsq", "queue", "tokio", "actix",  "async", "actor"]
+keywords = ["nsq", "queue", "actix",  "async", "actor"]
 categories = ["caching", "asynchronous"]
 repository = "https://github.com/alex179ohm/nsq-client-rs"
 readme = "README.md"
