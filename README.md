@@ -1,12 +1,12 @@
-# NSQ Rust client [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs)[![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)
+# NSQ Rust client [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)
 
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.
 Nsq-client it's designed to support by default multiple Readers for Multiple Connections, readers are routed per single connection by a round robin algorithm.
 
 ## Examples
-[Simple Processing Message](https://github.com/alex179ohm/nsqueue/example/reader)
-[Simple Consumer](https://github.com/alex179ohm/nsqueue/example/consumer)
-[wesocket tuning Consumer](https://github.com/alex179ohm/example/ws-consumer)
+- [Simple Processing Message](https://github.com/alex179ohm/nsqueue/example/reader)
+- [Simple Consumer](https://github.com/alex179ohm/nsqueue/example/consumer)
+- [wesocket tuning Consumer](https://github.com/alex179ohm/example/ws-consumer)
 
 
 ### Simple Reader (SUB)
