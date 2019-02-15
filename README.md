@@ -7,8 +7,6 @@ Nsq-client it's designed to support by default multiple Readers for Multiple Con
 ## Examples
 - [Simple Processing Message](https://github.com/alex179ohm/nsqueue/example/reader)
 - [Simple Consumer](https://github.com/alex179ohm/nsqueue/example/consumer)
-- [wesocket tuning Consumer](https://github.com/alex179ohm/example/ws-consumer)
-
 
 ### Simple Reader (SUB)
 ```rust
