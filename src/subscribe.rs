@@ -21,41 +21,36 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#![feature(try_from, associated_type_defaults)]
-extern crate futures;
-extern crate tokio_io;
-extern crate tokio_codec;
-extern crate tokio_tcp;
-extern crate bytes;
-extern crate hostname;
-extern crate serde;
-extern crate serde_derive;
-extern crate serde_json;
-extern crate actix;
-extern crate backoff;
-extern crate log;
-extern crate snap;
-extern crate byteorder;
-extern crate fnv;
+//use std::collections::HashMap;
+//use std::any::Any;
+use std::sync::Arc;
 
+use actix::prelude::*;
+use actix::dev::ToEnvelope;
+//use actix::sync::SyncContext;
+//use log::info;
 
-mod codec;
-#[allow(dead_code)]
-mod commands;
-#[allow(dead_code)]
-mod error;
-mod config;
-mod msgs;
-mod producer;
-mod conn;
-mod subscribe;
-//mod consumer;
+use crate::msgs::{NsqMsg, AddHandler};
+use crate::conn::Connection;
+//use crate::config::Config;
 
-pub use commands::{fin, req, touch};
-pub use subscribe::{Subscribe};
-pub use config::Config;
-pub use producer::{Producer};
-pub use conn::{Connection};
-pub use codec::{NsqCodec, Cmd};
-pub use error::Error;
-pub use msgs::{Fin, Msg, Reqeue, Touch, Conn, Pub, NsqMsg, AddHandler, Ready, InFlight};
+pub trait Subscribe
+where
+    Self: Actor,
+    <Self as Actor>::Context: AsyncContext<Self>
+{
+    fn subscribe<M: NsqMsg>(&self, ctx: &mut Self::Context, addr: Arc<Addr<Connection>>)
+    where
+        Self: Handler<M>,
+        <Self as Actor>::Context: ToEnvelope<Self, M>
+    {
+        let recp = ctx.address().recipient::<M>();
+        addr.do_send(AddHandler(recp));
+    }
+}
+
+impl<A> Subscribe for A
+where
+    A: Actor,
+    <Self as Actor>::Context: AsyncContext<A>
+{}
