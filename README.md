@@ -5,8 +5,7 @@ A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://n
 Nsq-client it's designed to support by default multiple Readers for Multiple Connections, readers are routed per single connection by a round robin algorithm.
 
 ## Examples
-- [Simple Processing Message](https://github.com/alex179ohm/nsqueue/example/reader)
-- [Simple Consumer](https://github.com/alex179ohm/nsqueue/example/consumer)
+- [Simple Processing Message](https://github.com/alex179ohm/nsq-client-rs/example/reader)
 
 ### Simple Reader (SUB)
 ```rust
