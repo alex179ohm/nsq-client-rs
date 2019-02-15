@@ -1,7 +1,5 @@
 language: rust
 rust:
     - nightly
-    - stable
-    - beta
 sudo: false
 cache: cargo
