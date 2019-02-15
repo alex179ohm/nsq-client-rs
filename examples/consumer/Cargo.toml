@@ -1,0 +1,11 @@
+[package]
+name = "consumer"
+version = "0.1.0"
+authors = ["alex179ohm <alex179ohm@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4.0"
+env_logger = "0.6.0"
+nsqueue = { path = "../../" }
+actix = "0.7.9"
