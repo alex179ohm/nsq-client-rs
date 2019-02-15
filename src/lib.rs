@@ -34,7 +34,7 @@ extern crate serde_json;
 extern crate actix;
 extern crate backoff;
 extern crate log;
-extern crate snap;
+//extern crate snap;
 extern crate byteorder;
 extern crate fnv;
 

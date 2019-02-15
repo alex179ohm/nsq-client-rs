@@ -1,10 +1,10 @@
 #[cfg(test)]
 extern crate bytes;
-extern crate nsqueue;
+extern crate nsq_client;
 extern crate tokio_io;
 
 use bytes::{BufMut, BytesMut};
-use nsqueue::{NsqCodec, Cmd};
+use nsq_client::{NsqCodec, Cmd};
 use tokio_io::codec::{Encoder, Decoder};
 
 const FRAME_TYPE_RESPONSE: i32 = 0x00;
