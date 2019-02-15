@@ -4,3 +4,4 @@ rust:
     - stable
     - beta
 sudo: false
+cache: cargo
