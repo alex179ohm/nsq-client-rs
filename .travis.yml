@@ -3,3 +3,5 @@ rust:
     - nightly
 sudo: false
 cache: cargo
+script:
+    - cargo build --verbose

@@ -137,8 +137,13 @@ fn decode_error_test() {
     let mut codec = NsqCodec{};
     gen_frame_error(&mut buf, "E_INVALID");
     match codec.decode(&mut buf) {
-        Ok(r) => { panic!("expected Error found: {:?}", r) },
-        Err(_) => { () },
+        Ok(r) => {
+            match r.unwrap() {
+                Cmd::ResponseError(_) => {},
+                _ => { panic!("Expected Cmd::ResponseError") }
+            }
+         },
+        Err(e) => { panic!("Err: {}", e) },
     }
 }
 
@@ -169,11 +174,12 @@ fn decode_msg_utf8_test() {
     gen_frame_message(&mut buf, "®µ¶", "00000000000000ff");
     match codec.decode(&mut buf) {
         Ok(r) => {
-            match r.unwrap() {
-                Cmd::ResponseMsg(_) => {
+            match r {
+                Some(Cmd::ResponseMsg(_)) => {
                     ()
                 },
-                _ => { panic!("Expected Message found Response") },
+                Some(_) => { panic!("expected ResponseMsg")},
+                None => { panic!("Expected Some(ResponseMsg)") },
             }
         },
         Err(err) => {
