@@ -6,6 +6,7 @@ Nsq-client it's designed to support by default multiple Readers for Multiple Con
 
 ## Examples
 - [Simple Processing Message](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/reader)
+- [Simple Producer](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/producer)
 
 ### Simple Reader (SUB)
 ```rust
