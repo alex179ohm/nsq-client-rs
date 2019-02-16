@@ -1,6 +1,6 @@
 [package]
 name = "nsq-client"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Alessandro Cresto Miseroglio <alex179ohm@gmail.com>"]
 description = """
 Rust client for the NSQ realtime message processing system"
@@ -10,7 +10,14 @@ keywords = ["nsq", "queue", "actix",  "async", "actor"]
 categories = ["caching", "asynchronous"]
 repository = "https://github.com/alex179ohm/nsq-client-rs"
 readme = "README.md"
-exclude = [".gitignore", ".travis.yml", ".cargo/config", ".appveyor.yml"]
+exclude = [
+    ".gitignore",
+    ".travis.yml",
+    ".cargo/config",
+    ".appveyor.yml",
+    "tests/*",
+    "examples/consumer/*"
+]
 
 [badges]
 appveyor = { repository = "alex179ohm/nsq-client-rs" }
