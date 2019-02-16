@@ -7,5 +7,5 @@ edition = "2018"
 [dependencies]
 log = "0.4.0"
 env_logger = "0.6.0"
-nsqueue = { path = "../../" }
+nsq-client = { path = "../../" }
 actix = "0.7.9"

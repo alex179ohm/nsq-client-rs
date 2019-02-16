@@ -60,6 +60,7 @@ fn main() {
             "test", //channel
             "0.0.0.0:4150", //nsqd tcp address
             Some(config), //config (Optional see mod config for defaults, if None Consumer sets defaults)
+            None, // secret for Auth (Optional)
             Some(2), // rdy (optional if None set rdy to 1)
     ));
     let conn = Arc::new(c);

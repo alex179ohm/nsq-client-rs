@@ -44,6 +44,7 @@ fn main() {
         "test", // <- channel
         "0.0.0.0:4150", // <- nsqd tcp address
         Some(config), // <- config (Optional)
+	None, // secret for Auth (Optional)
 	Some(2) // <- RDY (Optional default: 1)
     ));
     let conn = Arc::new(c);
@@ -52,9 +53,13 @@ fn main() {
     sys.run();
 }
 ```
+### launch nsqd
+```bash
+$ nsqd -verbose
+```
 ### launch the reader
 ```bash
-$ RUST_LOG=nsq-client=debug cargo run
+$ RUST_LOG=nsq_client=debug cargo run
 ```
 
 ### Current features and work in progress

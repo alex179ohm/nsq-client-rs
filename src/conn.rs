@@ -1,18 +1,18 @@
 // MIT License
-// 
+//
 // Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
 // Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -38,7 +38,7 @@ use futures::stream::once;
 use fnv::FnvHashMap;
 
 use crate::codec::{NsqCodec, Cmd};
-use crate::commands::{identify, nop, rdy, sub, fin, VERSION};
+use crate::commands::{identify, nop, rdy, sub, fin, auth, VERSION};
 use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
@@ -71,6 +71,7 @@ pub struct Connection
     topic: String,
     channel: String,
     config: Config,
+    secret: String,
     tcp_backoff: ExponentialBackoff,
     backoff: ExponentialBackoff,
     cell: Option<actix::io::FramedWrite<WriteHalf<TcpStream>, NsqCodec>>,
@@ -90,6 +91,7 @@ impl Default for Connection
             topic: String::new(),
             channel: String::new(),
             config: Config::default(),
+            secret: String::new(),
             tcp_backoff: ExponentialBackoff::default(),
             backoff: ExponentialBackoff::default(),
             cell: None,
@@ -118,6 +120,10 @@ impl Connection
             Some(cfg) => cfg,
             None => Config::default(),
         };
+        let mut scrt = String::new();
+        if let Some(sec) = secret {
+            scrt = sec;
+        }
         let rdy = match rdy {
             Some(r) => r,
             None => 1,
@@ -125,6 +131,7 @@ impl Connection
         tcp_backoff.max_elapsed_time = None;
         Connection {
             config: cfg,
+            secret: scrt,
             tcp_backoff,
             backoff,
             cell: None,
@@ -359,7 +366,7 @@ impl Handler<Auth> for Connection
     type Result = ();
     fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
-            cell.write(sub(&self.topic, &self.channel));
+            cell.write(auth(self.secret.clone()));
         } else {
             error!("unable to identify: connection dropped [{}]", self.addr);
             ctx.stop();
