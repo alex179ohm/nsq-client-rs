@@ -65,7 +65,8 @@ $ RUST_LOG=nsq_client=debug cargo run
 ```bash
 $ cargo run
 ```
-<script id="asciicast-8dZ5QgjN3WCwDhgU8mAX9BMsR" src="https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR.js" async data-autoplay="true" data-loop="true"></script>
+
+[![asciicast](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR.svg)](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR)
 
 ### Current features and work in progress
 - [X] PUB
