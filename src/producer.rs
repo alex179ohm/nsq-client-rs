@@ -288,11 +288,11 @@ impl Handler<Pub> for Producer
 
     fn handle(&mut self, msg: Pub, _ctx: &mut Self::Context) -> Self::Result {
         let (tx, rx) = oneshot::channel();
-        println!("on Pub");
         if let Some(ref mut cell) = self.cell {
             self.queue.push_back(tx);
             let topic = self.topic.clone();
-            println!("publish data");
+            let m = &msg.0.clone();
+            println!("publish: {}", m);
             cell.write(publish(topic.as_str(), &msg.0));
         } else {
             let _ = tx.send(Err(Error::NotConnected));

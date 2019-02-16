@@ -19,7 +19,7 @@ use actix::prelude::*;
 use nsqueue::{Connection, Msg, Fin, Subscribe, Config};
 
 struct MyReader {
-	pub conn: Arc<Addr<Connection>>,
+    pub conn: Arc<Addr<Connection>>,
 }
 
 impl Actor for MyReader {
@@ -44,8 +44,8 @@ fn main() {
         "test", // <- channel
         "0.0.0.0:4150", // <- nsqd tcp address
         Some(config), // <- config (Optional)
-	None, // secret for Auth (Optional)
-	Some(2) // <- RDY (Optional default: 1)
+        None, // secret for Auth (Optional)
+        Some(2) // <- RDY (Optional default: 1)
     ));
     let conn = Arc::new(c);
     let _ = MyReader{ conn: conn.clone() }.start(); // <- Same thread reader
@@ -61,6 +61,11 @@ $ nsqd -verbose
 ```bash
 $ RUST_LOG=nsq_client=debug cargo run
 ```
+### launch the producer
+```bash
+$ cargo run
+```
+<script id="asciicast-8dZ5QgjN3WCwDhgU8mAX9BMsR" src="https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR.js" async data-autoplay="true" data-loop="true"></script>
 
 ### Current features and work in progress
 - [X] PUB
