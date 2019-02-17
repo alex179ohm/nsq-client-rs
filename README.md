@@ -1,4 +1,4 @@
-# NSQ Rust client [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)
+# NSQ client written in rust [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)
 Sponsored by <a href="https://tngrm.io"><img src="https://tngrm.io/static/img/tngrm_black.svg" width="100"></a>
 ---
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.
@@ -69,14 +69,10 @@ $ cargo run
 
 [![asciicast](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR.svg)](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR)
 
-### Current features and work in progress
-- [X] PUB
-- [X] SUB
+### ToDo
 - [ ] Discovery
-- [X] Backoff
 - [ ] TLS
 - [ ] Snappy
-- [X] Auth
 - [ ] First-ready-first-served readers routing algorithm.
 
 ## License

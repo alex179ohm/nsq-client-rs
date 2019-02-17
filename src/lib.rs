@@ -21,6 +21,41 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+//! Nsq-client is a actix based implementation of nsq protocol.
+//!
+//! This crate is intended as a swiss-knife base implementation for more
+//! complex nsq client applications, it supports even single or multiple connections, single or
+//! multiple async readers.
+//!
+//! Due the actors's actix model, readers and connections are distinct entities witch communicate
+//! each other throught messages, so one reader could receive messages from multiple connections and multiple
+//! connections could easily share multiple readers.
+//!
+//!
+//! # Example
+//! ```
+//! struct MyReader{
+//!     conn: Arc<Addr<Connection>>,
+//! };
+//!
+//! impl Actor for MyReader {
+//!     type Context = Context<Self>;
+//!     fn started(&mut self, _: &mut Self::Context) {
+//!         self.subscribe::<Msg>(ctx, self.conn.clone());
+//!     }
+//! }
+//!
+//! impl Handler<Msg> for MyReader {
+//!     type Result = ();
+//!     fn handle(&mut self, msg: Msg, ctx: &mut Self::Context) {
+//!         let conn = msg.conn.clone();
+//!         let msg = msg.msg;
+//!         info!("MyReader received: {:?}", msg);
+//!         conn.do_send(Fin(msg.id));
+//!     }
+//! }
+//! ```
+
 #![feature(try_from, associated_type_defaults)]
 extern crate futures;
 extern crate tokio_io;
@@ -34,7 +69,6 @@ extern crate serde_json;
 extern crate actix;
 extern crate backoff;
 extern crate log;
-//extern crate snap;
 extern crate byteorder;
 extern crate fnv;
 
@@ -49,13 +83,11 @@ mod msgs;
 mod producer;
 mod conn;
 mod subscribe;
-//mod consumer;
 
 pub use commands::{fin, req, touch};
 pub use subscribe::{Subscribe};
 pub use config::Config;
 pub use producer::{Producer};
 pub use conn::{Connection};
-pub use codec::{NsqCodec, Cmd};
 pub use error::Error;
-pub use msgs::{Fin, Msg, Reqeue, Touch, Conn, Pub, NsqMsg, AddHandler, Ready, InFlight};
+pub use msgs::{Fin, Msg, Reqeue, Touch, Conn, Pub, InFlight};
