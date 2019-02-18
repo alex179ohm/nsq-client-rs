@@ -1,4 +1,4 @@
-# NSQ client written in rust [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)
+# NSQ client written in rust [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master)[![](https://img.shields.io/crates/v/nsq-client.svg?style=flat)](https://crates.io/crates/nsq-client)
 Sponsored by <a href="https://tngrm.io"><img src="https://tngrm.io/static/img/tngrm_black.svg" width="100"></a>
 ---
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.

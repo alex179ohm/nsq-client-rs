@@ -3,9 +3,10 @@ name = "nsq-client"
 version = "0.1.3"
 authors = ["Alessandro Cresto Miseroglio <alex179ohm@gmail.com>"]
 description = """
-Rust client for the NSQ realtime message processing system"
+Rust client for the NSQ realtime message processing system
 """
 license = "MIT"
+license-file = "LICENSE"
 keywords = ["nsq", "queue", "actix",  "async", "actor"]
 categories = ["caching", "asynchronous"]
 repository = "https://github.com/alex179ohm/nsq-client-rs"
@@ -22,7 +23,6 @@ exclude = [
 [badges]
 appveyor = { repository = "alex179ohm/nsq-client-rs" }
 travis-ci = { repository = "alex179ohm/nsq-client-rs" }
-maintenance = { state = "actively-developed" }
 
 [dependencies]
 log = "0.4"
