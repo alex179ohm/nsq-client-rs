@@ -21,19 +21,42 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//use std::collections::HashMap;
-//use std::any::Any;
 use std::sync::Arc;
 
 use actix::prelude::*;
 use actix::dev::ToEnvelope;
-//use actix::sync::SyncContext;
-//use log::info;
 
 use crate::msgs::{NsqMsg, AddHandler};
 use crate::conn::Connection;
-//use crate::config::Config;
 
+/// Allows differents consumers to subscribe to the desired msgs sent by connections.
+///
+/// ### Example
+/// ```rust
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<Msg>(ctx, self.0.clone());
+///         self.subsctibe::<InFligth>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<Msg> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: Msg, _: &mut Self::Context) {
+///         // process Msg
+///     }
+/// }
+///
+/// impl Handler<InFligth> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: InFligth, _: &mut Self::Context) {
+///         // do something every time in_fligth is increased or decreased
+///     }
+/// }
+/// ```
 pub trait Subscribe
 where
     Self: Actor,

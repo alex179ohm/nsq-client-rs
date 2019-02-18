@@ -54,7 +54,7 @@ impl Handler<Msg> for MyReader {
 fn main() {
     env_logger::init();
     let sys = System::new("nsq-consumer");
-    let config = Config::default().client_id("consumer".to_string());
+    let config = Config::new().client_id("consumer");
     let c = Supervisor::start(|_| Connection::new(
             "test", // topic
             "test", //channel

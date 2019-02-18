@@ -22,7 +22,7 @@
 // SOFTWARE.
 
 //! And implementation of the NSQ protocol,
-//! Source: https://github.com/alex179ohm/nsqueue/blob/master/src/codec.rs
+//! Source: https://github.com/alex179ohm/nsq-client-rs/blob/master/src/codec.rs
 
 use std::io::{self, Cursor};
 use std::str;

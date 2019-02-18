@@ -45,7 +45,6 @@ use crate::msgs::{
     Auth, Sub, Ready, Cls,
     Resume, NsqBackoff, Fin, Msg,
     NsqMsg, AddHandler, InFlight};
-//use crate::consumer_srvc::ConsumerService;
 
 #[derive(Message, Clone)]
 pub struct TcpConnect(pub String);
@@ -62,6 +61,28 @@ pub enum ConnState {
     Stopped,
 }
 
+/// Tcp Connection to NSQ system.
+///
+/// Tries to connect to nsqd early as started:
+///
+/// # Examples
+/// ```
+/// use actix::prelude::*;
+/// use nsq_client::Connection;
+///
+/// fn main() {
+///     let sys = System::new("consumer");
+///     Supervisor::start(|_| Connection::new(
+///         "test", // <- topic
+///         "test", // <- channel
+///         "0.0.0.0:4150", // <- nsqd tcp address
+///         None, // <- config (Optional)
+///         None, // <- secret used by Auth
+///         Some(1) // <- RDY setting for the Connection
+///     ));
+///     sys.run();
+/// }
+/// ```
 pub struct Connection
 {
     addr: String,
@@ -106,6 +127,14 @@ impl Default for Connection
 
 impl Connection
 {
+    /// Return a Tcp Connection to nsqd.
+    ///
+    /// * `topic`    - Topic String
+    /// * `channel`  - Channel String
+    /// * `addr`     - Tcp address of nsqd
+    /// * `config`   - Optional [`Config`]
+    /// * `secret`   - Optional String used to autenticate to nsqd
+    /// * `rdy`      - Optional initial RDY setting
     pub fn new<S: Into<String>>(
         topic: S,
         channel: S,
@@ -160,12 +189,6 @@ impl Actor for Connection
     }
 }
 
-//impl Connection {
-//    fn add_inflight_handler(&mut self, handler: Recipient<InFlight>) {
-//        self.info_hashmap.insert(TypeId::of::<InFlight>(), Box::new(handler));
-//    }
-//}
-//
 impl actix::io::WriteHandler<io::Error> for Connection
 {
     fn error(&mut self, err: io::Error, _: &mut Self::Context) -> Running {

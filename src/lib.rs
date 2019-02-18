@@ -21,19 +21,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//! Nsq-client is a actix based implementation of nsq protocol.
+//! Nsq-client is the [actix](https://actix.rs) based client implementation of the nsq protocol.
 //!
 //! This crate is intended as a swiss-knife base implementation for more
 //! complex nsq client applications, it supports even single or multiple connections, single or
 //! multiple async readers.
 //!
-//! Due the actors's actix model, readers and connections are distinct entities witch communicate
+//! Due the actors model, readers and connections are distinct entities witch communicate
 //! each other throught messages, so one reader could receive messages from multiple connections and multiple
-//! connections could easily share multiple readers.
+//! connections could easily send messages to multiple readers.
 //!
 //!
-//! # Example
+//! # Examples
 //! ```
+//! use actix::prelude::*;
+//! use nsq_client::{Connection, Msg, Subscribe, Fin};
+//!
 //! struct MyReader{
 //!     conn: Arc<Addr<Connection>>,
 //! };
@@ -84,10 +87,10 @@ mod producer;
 mod conn;
 mod subscribe;
 
-pub use commands::{fin, req, touch};
+//pub use commands::{fin, req, touch};
 pub use subscribe::{Subscribe};
 pub use config::Config;
 pub use producer::{Producer};
 pub use conn::{Connection};
 pub use error::Error;
-pub use msgs::{Fin, Msg, Reqeue, Touch, Conn, Pub, InFlight};
+pub use msgs::{Fin, Msg, Reqeue, Touch, Pub, InFlight};

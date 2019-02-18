@@ -3,12 +3,24 @@ Sponsored by <a href="https://tngrm.io"><img src="https://tngrm.io/static/img/tn
 ---
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.
 Nsq-client it's designed to support by default multiple Readers for Multiple Connections, readers are routed per single connection by a round robin algorithm.
+---
+## Usage
 
-## Examples
-- [Simple Processing Message](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/reader)
-- [Simple Producer](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/producer)
+To use nsq-client, add this to your Cargo.toml:
+```toml
+[dependencies]
+actix = "0.7"
+nsq-client = "0.1.2"
+```
+### Create your first consumer
+In order to use nsq-client you first need to create a Reader actor which implement Handler for the type of messages you want to receive
+from the connections and then subscribe it to the connections to be able to receive the type of messages you've selected.
 
-### Simple Reader (SUB)
+Available messages are:
+- Msg         nsqd messages sent to the Connection (routed to your Reader)
+- InFlight    Connection message sent to the reader every time inflight is increased or decreased
+
+### Simple Consumer (SUB)
 ```rust
 extern crate nsqueue;
 extern crate actix;
@@ -68,6 +80,10 @@ $ cargo run
 ```
 
 [![asciicast](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR.svg)](https://asciinema.org/a/8dZ5QgjN3WCwDhgU8mAX9BMsR)
+
+## Examples
+- [Simple Processing Message](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/reader)
+- [Simple Producer](https://github.com/alex179ohm/nsq-client-rs/tree/master/examples/producer)
 
 ### ToDo
 - [ ] Discovery
