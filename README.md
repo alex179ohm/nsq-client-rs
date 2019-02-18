@@ -2,8 +2,8 @@
 Sponsored by <a href="https://tngrm.io"><img src="https://tngrm.io/static/img/tngrm_black.svg" width="100"></a>
 ---
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.
+
 Nsq-client it's designed to support by default multiple Readers for Multiple Connections, readers are routed per single connection by a round robin algorithm.
----
 ## Usage
 
 To use nsq-client, add this to your Cargo.toml:
