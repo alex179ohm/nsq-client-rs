@@ -25,7 +25,7 @@ use serde_derive::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthResp {
-    indentity: String,
+    identity: String,
     identity_url: String,
     permission_count: u32,
 }
