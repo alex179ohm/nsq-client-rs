@@ -25,7 +25,6 @@ use actix::prelude::*;
 
 use crate::codec::Cmd;
 use crate::error::Error;
-//use crate::conn::Connection;
 
 pub trait NsqMsg: Message<Result = ()> + Send + 'static {}
 
@@ -36,9 +35,6 @@ where
 
 #[derive(Message)]
 pub struct AddHandler<M: NsqMsg>(pub Recipient<M>);
-
-//#[derive(Message)]
-//pub struct Conn(pub Addr<Connection>);
 
 /// Message sent by nsqd
 ///
