@@ -10,7 +10,7 @@ To use nsq-client, add this to your Cargo.toml:
 ```toml
 [dependencies]
 actix = "0.7"
-nsq-client = "0.1.2"
+nsq-client = "0.1.4"
 ```
 ### Create your first consumer
 In order to use nsq-client you first need to create a Reader actor which implement Handler for the type of messages you want to receive
