@@ -3,7 +3,7 @@ use serde_derive::{Serialize, Deserialize};
 /// Configuration sent to nsqd to properly config the [Connection](struct.Connection.html)
 ///
 /// # Examples
-///```
+///```no-run
 /// use nsq_client::{Connection, Config};
 ///
 /// fn main() {
@@ -147,7 +147,7 @@ pub struct NsqdConfig {
 #[allow(dead_code)]
 impl Config {
     /// Create default [Config](struct.Config.html)
-    /// ```
+    /// ```no-run
     /// use nsq_client::{Config};
     ///
     /// fn main() {
@@ -160,7 +160,7 @@ impl Config {
     }
 
     /// Change [client_id](struct.Config.html#structfield.client_id)
-    /// ```
+    /// ```no-run
     /// use nsq_client::Config;
     ///
     /// fn main() {
@@ -174,7 +174,7 @@ impl Config {
     }
 
     /// Change [hostname](struct.Config.html#structfield.hostname)
-    /// ```
+    /// ```no-run
     /// use nsq_client::Config;
     ///
     /// fn main() {
@@ -188,7 +188,7 @@ impl Config {
     }
 
     /// Change [user_agent](struct.Config.html#structfield.user_agent)
-    /// ```
+    /// ```no-run
     /// use nsq_client::Config;
     ///
     /// fn main() {

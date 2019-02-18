@@ -66,7 +66,7 @@ pub enum ConnState {
 /// Tries to connect to nsqd early as started:
 ///
 /// # Examples
-/// ```
+/// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::Connection;
 ///

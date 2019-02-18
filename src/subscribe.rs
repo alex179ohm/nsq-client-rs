@@ -31,8 +31,8 @@ use crate::conn::Connection;
 
 /// Allows differents consumers to subscribe to the desired msgs sent by connections.
 ///
-/// ### Example
-/// ```rust
+/// # Example
+/// ```no-run
 /// struct Consumer(pub Addr<Connection>);
 ///
 /// impl Actor for Consumer {

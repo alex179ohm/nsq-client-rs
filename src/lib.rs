@@ -33,7 +33,7 @@
 //!
 //!
 //! # Examples
-//! ```
+//! ```no-run
 //! use actix::prelude::*;
 //! use nsq_client::{Connection, Msg, Subscribe, Fin};
 //!

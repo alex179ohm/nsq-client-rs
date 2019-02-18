@@ -42,8 +42,8 @@ pub struct AddHandler<M: NsqMsg>(pub Recipient<M>);
 
 /// Message sent by nsqd
 ///
-/// ## Example
-/// ```rust
+/// # Examples
+/// ```no-run
 /// struct Consumer(Addr<Connection>);
 ///
 /// impl Actor for Consumer {
@@ -102,7 +102,7 @@ pub struct Sub;
 /// Allows Consumer to change Connection/s RDY
 ///
 /// # Examples
-/// ```rust
+/// ```no-run
 /// struct Consumer(Addr<Connection>);
 ///
 /// impl Actor for Consumer {
@@ -127,7 +127,7 @@ pub struct Resume;
 /// * id - id of the message
 ///
 /// # Examples
-/// ```
+/// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, Msg, Fin};
 ///
@@ -157,7 +157,7 @@ pub struct Fin(pub String);
 /// * timeout - time spent before message is re-sent by nsqd, 0 will not defer requeuing
 ///
 /// # Examples
-/// ```
+/// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, Requeue, Fin};
 ///
@@ -186,7 +186,7 @@ pub struct Reqeue(pub String, u32);
 /// * id - id of the message
 ///
 /// # Examples
-/// ```
+/// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, Touch, Fin};
 ///
