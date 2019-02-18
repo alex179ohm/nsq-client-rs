@@ -86,6 +86,7 @@ mod msgs;
 mod producer;
 mod conn;
 mod subscribe;
+mod auth;
 
 //pub use commands::{fin, req, touch};
 pub use subscribe::{Subscribe};

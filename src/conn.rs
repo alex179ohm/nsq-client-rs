@@ -45,6 +45,7 @@ use crate::msgs::{
     Auth, Sub, Ready, Cls,
     Resume, NsqBackoff, Fin, Msg,
     NsqMsg, AddHandler, InFlight};
+use crate::auth::AuthResp;
 
 #[derive(Message, Clone)]
 pub struct TcpConnect(pub String);
@@ -178,6 +179,22 @@ impl Connection
     }
 }
 
+//impl Connection {
+//    fn add_in_flight(&mut self, n: u32) {
+//        self.in_flight += 1;
+//        if let Some(info) = self.info_handler.downcast_ref::<Recipient<InFlight>>() {
+//            match info.do_send(InFlight(self.in_flight)) {
+//                Ok(_) => {
+//                    info!("inflight sent to handler");
+//                },
+//                Err(e) => {
+//                    error!("Sending in_flight failed: {}", e);
+//                }
+//            }
+//        }
+//    }
+//}
+
 impl Actor for Connection
 {
     type Context = Context<Self>;
@@ -242,6 +259,17 @@ impl StreamHandler<Cmd, Error> for Connection
                             ctx.notify(Sub);
                         }
                     },
+                    ConnState::Auth => {
+                        let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
+                            Ok(s) => { s },
+                            Err(err) => {
+                                error!("Auth json response invalid: {:?}", err);
+                                return ctx.stop();
+                            }
+                        };
+                        info!("authentication [{}] {:#?}", self.addr, auth_resp);
+                        ctx.notify(Sub);
+                    },
                     ConnState::Sub => {
                         ctx.notify(Sub);
                     },
@@ -262,10 +290,6 @@ impl StreamHandler<Cmd, Error> for Connection
                                 timestamp, attemps, id, body,
                             }) {
                                 Ok(_s) => {
-                                    self.in_flight += 1;
-                                    if let Some(info) = self.info_handler.downcast_ref::<Recipient<InFlight>>() {
-                                        let _ = info.do_send(InFlight(self.in_flight));
-                                    }
                                 },
                                 Err(e) => { error!("error sending msg to reader: {}", e) }
                             }
@@ -395,9 +419,7 @@ impl Handler<Auth> for Connection
             ctx.stop();
         }
         self.state = ConnState::Auth;
-        info!("authenticated [{}]", self.addr);
     }
-
 }
 
 impl Handler<Sub> for Connection
