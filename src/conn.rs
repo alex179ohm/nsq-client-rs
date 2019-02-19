@@ -532,6 +532,7 @@ impl Handler<NsqBackoff> for Connection
                 error!("backoff failed: connection dropped [{}]", self.addr);
                 Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
             }
+            self.info_in_flight(0);
             self.info_on_backoff();
         }
     }
@@ -548,6 +549,7 @@ impl Handler<Resume> for Connection
             error!("resume failed: connection dropped [{}]", self.addr);
             Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
         }
+        self.info_in_flight(1);
         self.info_on_resume();
     }
 }
