@@ -179,10 +179,10 @@ impl Connection
 
 impl Connection {
 
-    fn info_in_flight(&self) {
+    fn info_in_flight(&self, n: u32) {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<InFlight>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<InFlight>>() {
-                match handler.do_send(InFlight(self.in_flight)) {
+                match handler.do_send(InFlight(n)) {
                     Ok(_) => {},
                     Err(e) => {
                         error!("sending InFlight: {}", e)
@@ -360,7 +360,7 @@ impl StreamHandler<Cmd, Error> for Connection
                             }) {
                                 Ok(_s) => {
                                     self.in_flight += 1;
-                                    self.info_in_flight();
+                                    self.info_in_flight(self.in_flight);
                                 },
                                 Err(e) => { error!("error sending msg to reader: {}", e) }
                             }
@@ -465,7 +465,7 @@ impl Handler<Fin> for Connection
             self.state = ConnState::Started;
         }
         self.in_flight -= 1;
-        self.info_in_flight();
+        self.info_in_flight(self.in_flight);
     }
 }
 
