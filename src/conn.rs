@@ -44,7 +44,7 @@ use crate::error::Error;
 use crate::msgs::{
     Auth, OnAuth, Sub, Ready, Cls,
     Resume, NsqBackoff, Fin, Msg,
-    NsqMsg, AddHandler, InFlight};
+    NsqMsg, AddHandler, InFlight, OnIdentify, OnClose, OnBackoff, OnResume};
 use crate::auth::AuthResp;
 
 #[derive(Message, Clone)]
@@ -59,6 +59,7 @@ pub enum ConnState {
     Started,
     Backoff,
     Resume,
+    Closing,
     Stopped,
 }
 
@@ -177,17 +178,81 @@ impl Connection
 }
 
 impl Connection {
+
     fn info_in_flight(&self) {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<InFlight>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<InFlight>>() {
-                let _ = handler.do_send(InFlight(self.in_flight));
+                match handler.do_send(InFlight(self.in_flight)) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending InFlight: {}", e)
+                    }
+                }
             }
         }
     }
+
     fn info_on_auth(&self, resp: AuthResp) {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
-                let _ = handler.do_send(OnAuth(resp));
+                match handler.do_send(OnAuth(resp)) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending OnAuth: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn info_on_identify(&self, resp: NsqdConfig) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnIdentify>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnIdentify>>() {
+                match handler.do_send(OnIdentify(resp)) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending OnIdentify: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn info_on_close(&self, resp: bool) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnClose>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnClose>>() {
+                match handler.do_send(OnClose(resp)) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending OnClose: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn info_on_backoff(&self) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnBackoff>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnBackoff>>() {
+                match handler.do_send(OnBackoff) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending OnBackoff: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn info_on_resume(&self) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnResume>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnResume>>() {
+                match handler.do_send(OnResume) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        error!("sending OnBackoff: {}", e);
+                    }
+                }
             }
         }
     }
@@ -249,6 +314,7 @@ impl StreamHandler<Cmd, Error> for Connection
                             }
                         };
                         info!("configuration [{}] {:#?}", self.addr, config);
+                        self.info_on_identify(config.clone());
                         if config.auth_required {
                             info!("trying authentication [{}]", self.addr);
                             ctx.notify(Auth);
@@ -274,7 +340,11 @@ impl StreamHandler<Cmd, Error> for Connection
                     },
                     ConnState::Ready => {
                         ctx.notify(Ready(self.rdy));
-                    }
+                    },
+                    ConnState::Closing => {
+                        self.info_on_close(true);
+                        self.state = ConnState::Stopped;
+                    },
                     _ => {},
                 }
             }
@@ -301,6 +371,11 @@ impl StreamHandler<Cmd, Error> for Connection
                 }
             },
             Cmd::ResponseError(s) => {
+                if self.state == ConnState::Closing {
+                    error!("Closing connection: {}", s);
+                    self.info_on_close(false);
+                    self.state = ConnState::Started;
+                }
                 error!("failed: {}", s);
             }
             Cmd::Command(_) => {
@@ -372,7 +447,7 @@ impl Handler<TcpConnect> for Connection
 impl Handler<Cls> for Connection {
     type Result=();
     fn handle(&mut self, _msg: Cls, ctx: &mut Self::Context) {
-        self.state = ConnState::Stopped;
+        self.state = ConnState::Closing;
         ctx.stop();
     }
 }
@@ -395,6 +470,10 @@ impl Handler<Ready> for Connection
     type Result = ();
 
     fn handle(&mut self, msg: Ready, _ctx: &mut Self::Context) {
+        if self.state != ConnState::Ready {
+            self.rdy = msg.0;
+            return
+        }
         if let Some(ref mut cell) = self.cell {
             cell.write(rdy(msg.0));
         }
@@ -449,6 +528,7 @@ impl Handler<NsqBackoff> for Connection
                 error!("backoff failed: connection dropped [{}]", self.addr);
                 Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
             }
+            self.info_on_backoff();
         }
     }
 }
@@ -464,6 +544,7 @@ impl Handler<Resume> for Connection
             error!("resume failed: connection dropped [{}]", self.addr);
             Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
         }
+        self.info_on_resume();
     }
 }
 

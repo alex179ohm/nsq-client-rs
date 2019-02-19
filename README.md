@@ -17,8 +17,8 @@ In order to use nsq-client you first need to create a Reader actor which impleme
 from the connections and then subscribe it to the connections to be able to receive the type of messages you've selected.
 
 Available messages are:
-- Msg         nsqd messages sent to the Connection (routed to your Reader)
-- InFlight    Connection message sent to the reader every time inflight is increased or decreased
+- [Msg](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.Msg.html)         nsqd messages sent to the Connection (routed to your Reader)
+- [InFlight](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.InFlight.html)    Connection message sent to the reader every time inflight is increased or decreased
 
 ### Simple Consumer (SUB)
 ```rust

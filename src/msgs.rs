@@ -26,6 +26,7 @@ use actix::prelude::*;
 use crate::codec::Cmd;
 use crate::error::Error;
 use crate::auth::AuthResp;
+use crate::config::NsqdConfig;
 
 pub trait NsqMsg: Message<Result = ()> + Send + 'static {}
 
@@ -206,8 +207,134 @@ pub struct Reqeue(pub String, u32);
 #[derive(Message, Clone)]
 pub struct Touch(pub String);
 
+/// Sent by Connection if auth be successful
+///
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Connection, Subscribe, OnAuth};
+///
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<OnAuth>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<OnAuth> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnAuth, ctx: &mut Self::Conetxt) {
+///         println!("authenticated: {:?}", msg.0);
+///     }
+/// }
+/// ```
 #[derive(Message, Clone)]
 pub struct OnAuth(pub AuthResp);
+
+/// Sent by Connection after identify succeeds
+///
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Connection, Subscribe, OnIdentify};
+///
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<OnIdentify>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<OnIdentify> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnIdentify, ctx: &mut Self::Conetxt) {
+///         println!("identified: {:?}", msg.0);
+///     }
+/// }
+/// ```
+#[derive(Message, Clone)]
+pub struct OnIdentify(pub NsqdConfig);
+
+/// Sent by Connection after CLS is sent to nsqd
+///
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Connection, Subscribe, OnClose};
+///
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<OnClose>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<OnClose> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnClose, ctx: &mut Self::Conetxt) {
+///         if msg.0 == true {
+///             println!("connection closed");
+///         } else {
+///             println!("connection closing failed");
+///         }
+///     }
+/// }
+/// ```
+#[derive(Message, Clone)]
+pub struct OnClose(pub bool);
+
+/// Sent by Connection after Backoff state is activated
+///
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Connection, Subscribe, OnBackoff};
+///
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<OnBackoff>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<OnBackoff> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnBackoff, ctx: &mut Self::Conetxt) {
+///         println!("connection backoff activated");
+///     }
+/// }
+/// ```
+#[derive(Message, Clone)]
+pub struct OnBackoff;
+
+/// Sent by Connection after Backoff state is terminated
+///
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Connection, Subscribe, OnResume};
+///
+/// struct Consumer(pub Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, ctx: &mut Self::Context) {
+///         self.subscribe::<OnResume>(ctx, self.0.clone());
+///     }
+/// }
+///
+/// impl Handler<OnResume> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnResume, ctx: &mut Self::Conetxt) {
+///         println!("resuming connection from backoff state");
+///     }
+/// }
+/// ```
+#[derive(Message, Clone)]
+pub struct OnResume;
 
 #[derive(Message)]
 pub struct Cls;

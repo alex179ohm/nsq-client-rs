@@ -32,7 +32,6 @@ use tokio_io::codec::{Encoder, Decoder};
 use log::error;
 
 use crate::error::Error;
-//use crate::message::Msg;
 
 // Header: Size(4-Byte) + FrameType(4-Byte)
 const HEADER_LENGTH: usize = 8;
