@@ -266,6 +266,7 @@ impl StreamHandler<Cmd, Error> for Connection
                             }
                         };
                         info!("authenticated [{}] {:#?}", self.addr, auth_resp);
+                        self.info_on_auth(auth_resp);
                         ctx.notify(Sub);
                     },
                     ConnState::Sub => {

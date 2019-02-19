@@ -45,9 +45,9 @@ impl Actor for MyReader {
 impl Handler<Msg> for MyReader {
     fn handle(&mut self, msg: Msg, _: &mut Self::Context) {
         println!("MyReader received {:?}", msg);
-	if let Ok(body) = String::from_utf8(msg.body) {
-		println!("utf8 msg: {}", body);
-	}
+        if let Ok(body) = String::from_utf8(msg.body) {
+              println!("utf8 msg: {}", body);
+        }
         self.conn.do_send(Fin(msg.id));
     }
 }
