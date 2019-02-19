@@ -1,4 +1,5 @@
 # NSQ client written in rust [![Build Status](https://travis-ci.com/alex179ohm/nsq-client-rs.svg?branch=master)](https://travis-ci.com/alex179ohm/nsq-client-rs) [![Build status](https://ci.appveyor.com/api/projects/status/ov5ryj2r4iy2v7rp/branch/master?svg=true)](https://ci.appveyor.com/project/alex179ohm/nsq-client-rs/branch/master) [![](https://img.shields.io/crates/v/nsq-client.svg?style=flat)](https://crates.io/crates/nsq-client)
+
 Sponsored by <a href="https://tngrm.io"><img src="https://tngrm.io/static/img/tngrm_black.svg" width="100"></a>
 ---
 A [Actix](https://actix.rs/) based client implementation for the [NSQ](https://nsq.io) realtime message processing system.
@@ -10,15 +11,19 @@ To use nsq-client, add this to your Cargo.toml:
 ```toml
 [dependencies]
 actix = "0.7"
-nsq-client = "0.1.7"
+nsq-client = "0.1.8"
 ```
 ### Create your first consumer
 In order to use nsq-client you first need to create a Reader actor which implement Handler for the type of messages you want to receive
 from the connections and then subscribe it to the connections to be able to receive the type of messages you've selected.
 
 Available messages are:
-- [Msg](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.Msg.html)         nsqd messages sent to the Connection (routed to your Reader)
-- [InFlight](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.InFlight.html)    Connection message sent to the reader every time inflight is increased or decreased
+- [Msg](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.Msg.html)
+- [InFlight](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.InFlight.html)
+- [OnIdentify](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnIdentify.html)
+- [OnAuth](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnAuth.html)
+- [OnBackoff](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnBackoff.html)
+- [OnResume](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnResume.html)
 
 ### Simple Consumer (SUB)
 ```rust
