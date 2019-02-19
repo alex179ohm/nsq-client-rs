@@ -207,8 +207,9 @@ pub struct Reqeue(pub String, u32);
 #[derive(Message, Clone)]
 pub struct Touch(pub String);
 
-/// Sent by Connection if auth be successful
+/// Sent by [Connection](struct.Connection.html) if auth be successful
 ///
+/// # Examples
 /// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, OnAuth};
@@ -232,8 +233,9 @@ pub struct Touch(pub String);
 #[derive(Message, Clone)]
 pub struct OnAuth(pub AuthResp);
 
-/// Sent by Connection after identify succeeds
+/// Sent by [Connection](struct.Connection.html) after identify succeeds
 ///
+/// # Examples
 /// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, OnIdentify};
@@ -257,8 +259,9 @@ pub struct OnAuth(pub AuthResp);
 #[derive(Message, Clone)]
 pub struct OnIdentify(pub NsqdConfig);
 
-/// Sent by Connection after CLS is sent to nsqd
+/// Sent by [Connection](struct.Connection.html) after CLS is sent to nsqd
 ///
+/// # Examples
 /// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, OnClose};
@@ -286,8 +289,9 @@ pub struct OnIdentify(pub NsqdConfig);
 #[derive(Message, Clone)]
 pub struct OnClose(pub bool);
 
-/// Sent by Connection after Backoff state is activated
+/// Sent by [Connection](struct.Connection.html) after Backoff state is activated
 ///
+/// # Examples
 /// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, OnBackoff};
@@ -311,8 +315,9 @@ pub struct OnClose(pub bool);
 #[derive(Message, Clone)]
 pub struct OnBackoff;
 
-/// Sent by Connection after Backoff state is terminated
+/// Sent by [Connection](struct.Connection.html) after Backoff state is terminated
 ///
+/// # Examples
 /// ```no-run
 /// use actix::prelude::*;
 /// use nsq_client::{Connection, Subscribe, OnResume};
@@ -336,6 +341,35 @@ pub struct OnBackoff;
 #[derive(Message, Clone)]
 pub struct OnResume;
 
+/// Allow Consumer to safefly close nsq [Connection](struct.Connection.html)
+///
+/// Send nsq CLS connand to nsqd
+/// # Examples
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Cls, OnClose, Subscribe, Connection};
+///
+/// struct Consumer(Addr<Connection>);
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, _: &mut Self::Context) {
+///         self.subscribe::<OnClose>(ctx, self.0.clone());
+///         self.0.do_send(Cls);
+///     }
+/// }
+///
+/// impl Handler<OnClose> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnClose, _: &mut Self::Context) {
+///         if msg.0 {
+///             println!("Connection closed");
+///         } else {
+///             println!("Cannot close Connection");
+///         }
+///     }
+/// }
+/// ```
 #[derive(Message)]
 pub struct Cls;
 

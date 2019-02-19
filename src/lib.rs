@@ -88,10 +88,9 @@ mod conn;
 mod subscribe;
 mod auth;
 
-//pub use commands::{fin, req, touch};
 pub use subscribe::{Subscribe};
 pub use config::Config;
 pub use producer::{Producer};
 pub use conn::{Connection};
 pub use error::Error;
-pub use msgs::{Fin, Msg, Reqeue, Touch, Pub, InFlight, OnAuth, OnIdentify, Ready, OnBackoff, OnResume};
+pub use msgs::{Fin, Msg, Reqeue, Touch, Pub, InFlight, OnAuth, OnIdentify, Ready, OnBackoff, OnResume, OnClose, Backoff};
