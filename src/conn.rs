@@ -42,7 +42,7 @@ use crate::commands::{identify, nop, rdy, sub, fin, auth, VERSION};
 use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
-    Auth, Sub, Ready, Cls,
+    Auth, OnAuth, Sub, Ready, Cls,
     Resume, NsqBackoff, Fin, Msg,
     NsqMsg, AddHandler, InFlight};
 use crate::auth::AuthResp;
@@ -88,7 +88,6 @@ pub struct Connection
 {
     addr: String,
     handlers: Vec<Box<Any>>,
-    info_handler: Box<Any>,
     info_hashmap: FnvHashMap<TypeId, Box<Any>>,
     topic: String,
     channel: String,
@@ -108,7 +107,6 @@ impl Default for Connection
     fn default() -> Connection {
         Connection {
             handlers: Vec::new(),
-            info_handler: Box::new(()),
             info_hashmap: FnvHashMap::default(),
             topic: String::new(),
             channel: String::new(),
@@ -169,7 +167,6 @@ impl Connection
             channel: channel.into(),
             state: ConnState::Neg,
             handlers: Vec::new(),
-            info_handler: Box::new(()),
             info_hashmap: FnvHashMap::default(),
             addr: addr.into(),
             rdy: rdy,
@@ -179,21 +176,22 @@ impl Connection
     }
 }
 
-//impl Connection {
-//    fn add_in_flight(&mut self, n: u32) {
-//        self.in_flight += 1;
-//        if let Some(info) = self.info_handler.downcast_ref::<Recipient<InFlight>>() {
-//            match info.do_send(InFlight(self.in_flight)) {
-//                Ok(_) => {
-//                    info!("inflight sent to handler");
-//                },
-//                Err(e) => {
-//                    error!("Sending in_flight failed: {}", e);
-//                }
-//            }
-//        }
-//    }
-//}
+impl Connection {
+    fn info_in_flight(&self) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<InFlight>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<InFlight>>() {
+                let _ = handler.do_send(InFlight(self.in_flight));
+            }
+        }
+    }
+    fn info_on_auth(&self, resp: AuthResp) {
+        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
+            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
+                let _ = handler.do_send(OnAuth(resp));
+            }
+        }
+    }
+}
 
 impl Actor for Connection
 {
@@ -267,7 +265,7 @@ impl StreamHandler<Cmd, Error> for Connection
                                 return ctx.stop();
                             }
                         };
-                        info!("authentication [{}] {:#?}", self.addr, auth_resp);
+                        info!("authenticated [{}] {:#?}", self.addr, auth_resp);
                         ctx.notify(Sub);
                     },
                     ConnState::Sub => {
@@ -290,6 +288,8 @@ impl StreamHandler<Cmd, Error> for Connection
                                 timestamp, attemps, id, body,
                             }) {
                                 Ok(_s) => {
+                                    self.in_flight += 1;
+                                    self.info_in_flight();
                                 },
                                 Err(e) => { error!("error sending msg to reader: {}", e) }
                             }
@@ -385,9 +385,7 @@ impl Handler<Fin> for Connection
             cell.write(fin(&msg.0));
         }
         self.in_flight -= 1;
-        if let Some(info) = self.info_handler.downcast_ref::<Recipient<InFlight>>() {
-            let _ = info.do_send(InFlight(self.in_flight));
-        }
+        self.info_in_flight();
     }
 }
 
@@ -476,9 +474,9 @@ impl<M: NsqMsg> Handler<AddHandler<M>> for Connection
         if msg_id == TypeId::of::<Recipient<Msg>>() {
             self.handlers.push(Box::new(msg.0));
             info!("Reader added");
-        } else if msg_id == TypeId::of::<Recipient<InFlight>>() {
+        } else {
             self.info_hashmap.insert(msg_id, Box::new(msg.0));
-            info!("inflight handler added");
+            info!("info handler added");
         }
     }
 }

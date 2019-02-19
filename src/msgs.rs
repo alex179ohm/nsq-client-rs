@@ -1,18 +1,18 @@
 // MIT License
-// 
+//
 // Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
 // Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,6 +25,7 @@ use actix::prelude::*;
 
 use crate::codec::Cmd;
 use crate::error::Error;
+use crate::auth::AuthResp;
 
 pub trait NsqMsg: Message<Result = ()> + Send + 'static {}
 
@@ -71,7 +72,7 @@ pub struct Msg
     /// Id of the message
     pub id: String,
     /// Data sent by nsqd
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 impl Default for Msg {
@@ -80,7 +81,7 @@ impl Default for Msg {
             timestamp: 0,
             attemps: 0,
             id: "".to_owned(),
-            body: "".to_owned(),
+            body: Vec::new(),
         }
     }
 }
@@ -204,6 +205,9 @@ pub struct Reqeue(pub String, u32);
 /// ```
 #[derive(Message, Clone)]
 pub struct Touch(pub String);
+
+#[derive(Message, Clone)]
+pub struct OnAuth(pub AuthResp);
 
 #[derive(Message)]
 pub struct Cls;

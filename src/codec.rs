@@ -59,7 +59,7 @@ pub enum Cmd {
     ResponseError(String),
 
     /// Message response.
-    ResponseMsg(Vec<(i64, u16, String, String)>),
+    ResponseMsg(Vec<(i64, u16, String, Vec<u8>)>),
 
     /// A simple Command whitch not sends msg.
     Command(String),
@@ -72,9 +72,9 @@ pub enum Cmd {
 }
 
 /// NSQ codec
-pub struct NsqCodec {}
+pub struct NsqCodec;
 
-pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, String)> {
+pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, Vec<u8>)> {
     if buf.len() < 4 {
         None
     } else {
@@ -88,15 +88,18 @@ pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, String)> {
             let _ = cursor.get_i32_be();
             let timestamp = cursor.get_i64_be();
             let attemps = cursor.get_u16_be();
-            if let Ok(id_body) = str::from_utf8(&cursor.bytes()[..size - HEADER_LENGTH - 6]) {
-                let (id, body) = id_body.split_at(16);
-                // clean the buffer at frame size
-                buf.split_to(size+4);
-                Some((timestamp, attemps, id.to_owned(), body.to_owned()))
-            } else {
-                error!("error deconding utf8 message frame");
-                None
-            }
+            let id_body_bytes = &cursor.bytes()[..size - HEADER_LENGTH - 6];
+            let (id_bytes, body_bytes) = id_body_bytes.split_at(16);
+            let id = match str::from_utf8(id_bytes) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("error deconding utf8 id: {}", e);
+                    return None;
+                },
+            };
+            // clean the buffer at frame size
+            buf.split_to(size+4);
+            Some((timestamp, attemps, id.to_owned(), Vec::from(body_bytes)))
         }
     }
 }
@@ -189,12 +192,12 @@ impl Decoder for NsqCodec {
             // it's a message
             } else if frame_type == FRAME_TYPE_MESSAGE {
                 let mut resp_buf = buf.clone();
-                let mut msg_buf: Vec<(i64, u16, String, String)> = Vec::new();
+                let mut msg_buf: Vec<(i64, u16, String, Vec<u8>)> = Vec::new();
                 let mut need_more = false;
                 loop {
                     if resp_buf.is_empty() { break };
                     if let Some((ts, at, id, bd)) = decode_msg(&mut resp_buf) {
-                        msg_buf.push((ts, at, id.to_owned(), bd.to_owned()));
+                        msg_buf.push((ts, at, id.to_owned(), bd));
                     } else {
                         need_more = true;
                         break;
