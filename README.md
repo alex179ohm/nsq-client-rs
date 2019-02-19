@@ -11,19 +11,19 @@ To use nsq-client, add this to your Cargo.toml:
 ```toml
 [dependencies]
 actix = "0.7"
-nsq-client = "0.1.8"
+nsq-client = "0.1.9"
 ```
 ### Create your first consumer
 In order to use nsq-client you first need to create a Reader actor which implement Handler for the type of messages you want to receive
 from the connections and then subscribe it to the connections to be able to receive the type of messages you've selected.
 
 Available messages are:
-- [Msg](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.Msg.html)
-- [InFlight](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.InFlight.html)
-- [OnIdentify](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnIdentify.html)
-- [OnAuth](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnAuth.html)
-- [OnBackoff](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnBackoff.html)
-- [OnResume](https://docs.rs/nsq-client/0.1.7/nsq_client/struct.OnResume.html)
+- [Msg](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.Msg.html)
+- [InFlight](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.InFlight.html)
+- [OnIdentify](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnIdentify.html)
+- [OnAuth](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnAuth.html)
+- [OnBackoff](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnBackoff.html)
+- [OnResume](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnResume.html)
 
 ### Simple Consumer (SUB)
 ```rust
