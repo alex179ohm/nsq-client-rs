@@ -22,8 +22,6 @@ Available messages are:
 - [InFlight](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.InFlight.html)
 - [OnIdentify](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnIdentify.html)
 - [OnAuth](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnAuth.html)
-- [OnBackoff](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnBackoff.html)
-- [OnResume](https://docs.rs/nsq-client/0.1.9/nsq_client/struct.OnResume.html)
 
 ### Simple Consumer (SUB)
 ```rust

@@ -149,7 +149,7 @@ pub struct Resume;
 pub struct Fin(pub String);
 
 /// Send REQ command to nsqd
-/// 
+///
 /// Args:
 /// * id - id of the message
 /// * timeout - time spent before message is re-sent by nsqd, 0 will not defer requeuing
@@ -179,7 +179,7 @@ pub struct Fin(pub String);
 pub struct Reqeue(pub String, u32);
 
 /// Send TOUCH command to nsqd (reset timeout for and in-flight message)
-/// 
+///
 /// Args:
 /// * id - id of the message
 ///
