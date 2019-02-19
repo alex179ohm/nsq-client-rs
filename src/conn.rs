@@ -455,10 +455,14 @@ impl Handler<Cls> for Connection {
 impl Handler<Fin> for Connection
 {
     type Result = ();
-    fn handle(&mut self, msg: Fin, _ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Fin, ctx: &mut Self::Context) {
         // discard the in_flight messages
         if let Some(ref mut cell) = self.cell {
             cell.write(fin(&msg.0));
+        }
+        if self.state == ConnState::Resume {
+            ctx.notify(Ready(self.rdy));
+            self.state = ConnState::Started;
         }
         self.in_flight -= 1;
         self.info_in_flight();
