@@ -46,6 +46,9 @@ impl Handler<Msg> for MyReader {
     // on identify
     fn handle(&mut self, msg: Msg, _ctx: &mut Self::Context) {
         println!("MyReader: {:?}", msg);
+        if let Ok(body) = String::from_utf8(msg.body) {
+            println!("utf8 msg: {}", body);
+        }
         self.0.do_send(Fin(msg.id));
     }
 }

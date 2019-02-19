@@ -10,7 +10,7 @@ To use nsq-client, add this to your Cargo.toml:
 ```toml
 [dependencies]
 actix = "0.7"
-nsq-client = "0.1.6"
+nsq-client = "0.1.7"
 ```
 ### Create your first consumer
 In order to use nsq-client you first need to create a Reader actor which implement Handler for the type of messages you want to receive
@@ -45,6 +45,9 @@ impl Actor for MyReader {
 impl Handler<Msg> for MyReader {
     fn handle(&mut self, msg: Msg, _: &mut Self::Context) {
         println!("MyReader received {:?}", msg);
+	if let Ok(body) = String::from_utf8(msg.body) {
+		println!("utf8 msg: {}", body);
+	}
         self.conn.do_send(Fin(msg.id));
     }
 }
