@@ -113,6 +113,55 @@ pub struct Sub;
 #[derive(Message)]
 pub struct Ready(pub u32);
 
+/// Allows Consumer to set Connection on backoff state
+///
+/// # Examples
+/// ```no-run
+/// use actix::prelude::*;
+/// use nsq_client::{Subscribe, Connection, Backoff, OnBackoff, OnResume, InFlight, Ready};
+/// struct Consumer{
+///     conn: Addr<Connection>,
+///     backoff: bool,
+/// };
+///
+/// impl Actor for Consumer {
+///     type Context = Context<Self>;
+///     fn started(&mut self, _: &mut Self::Context) {
+///         self.subscribe::<OnBackoff>(ctx, self.0.clone());
+///         self.subscribe::<OnResume>(ctx, self.0.clone());
+///         self.subscribe::<InFlight>(ctx, self.0.clone());
+///         self.conn.do_send(Ready(10));
+///         self.conn.do_send(Backoff);
+///     }
+/// }
+///
+/// impl Handler<OnBackoff> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnBackoff, _: &mut Self::Context) {
+///         println!("Connection in Backoff");
+///         self.backoff = true;
+///     }
+/// }
+///
+/// impl Handler<OnResume> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnResume, _: &mut Self::Context) {
+///         println!("Connection resuming from backoff");
+///         self.backoff = false;
+///     }
+/// }
+///
+/// impl Handler<OnInflight> for Consumer {
+///     type Result = ();
+///     fn handle(&mut self, msg: OnInFlight, _: &mut Self::Context) {
+///         match msg.0 {
+///             0 => { println!("backoff state: {}", self.backoff) },
+///             1 => { println!("resuming from backoff") },
+///             _ => { println!("throttle") },
+///         }
+///     }
+/// }
+/// ```
 #[derive(Message)]
 pub struct Backoff;
 
