@@ -114,7 +114,7 @@ pub struct Sub;
 pub struct Ready(pub u32);
 
 #[derive(Message)]
-pub struct NsqBackoff;
+pub struct Backoff;
 
 #[derive(Message)]
 pub struct Resume;

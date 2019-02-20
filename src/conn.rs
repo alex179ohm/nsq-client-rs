@@ -26,7 +26,7 @@ use std::any::{Any, TypeId};
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
-use backoff::backoff::Backoff;
+use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use log::{error, info};
 use serde_json;
@@ -43,7 +43,7 @@ use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
     Auth, OnAuth, Sub, Ready, Cls,
-    Resume, NsqBackoff, Fin, Msg,
+    Resume, Backoff, Fin, Msg,
     NsqMsg, AddHandler, InFlight, OnIdentify, OnClose, OnBackoff, OnResume};
 use crate::auth::AuthResp;
 
@@ -519,10 +519,10 @@ impl Handler<Sub> for Connection
     }
 }
 
-impl Handler<NsqBackoff> for Connection
+impl Handler<Backoff> for Connection
 {
     type Result=();
-    fn handle(&mut self, _msg: NsqBackoff, ctx: &mut Self::Context) {
+    fn handle(&mut self, _msg: Backoff, ctx: &mut Self::Context) {
         if let Some(timeout) = self.backoff.next_backoff() {
             if let Some(ref mut cell) = self.cell {
                 cell.write(rdy(0));

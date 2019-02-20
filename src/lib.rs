@@ -93,4 +93,4 @@ pub use config::Config;
 pub use producer::{Producer};
 pub use conn::{Connection};
 pub use error::Error;
-pub use msgs::{Fin, Msg, Reqeue, Touch, Pub, InFlight, OnAuth, OnIdentify, Ready, OnBackoff, OnResume, OnClose, NsqBackoff};
+pub use msgs::{Fin, Msg, Reqeue, Touch, Pub, InFlight, OnAuth, OnIdentify, Ready, OnBackoff, OnResume, OnClose, Backoff};
