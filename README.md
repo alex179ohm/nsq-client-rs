@@ -28,14 +28,14 @@ Available messages are:
 
 ### Simple Consumer (SUB)
 ```rust
-extern crate nsqueue;
 extern crate actix;
+extern crate nsq_client;
 
 use std::sync::Arc;
 
 use actix::prelude::*;
 
-use nsqueue::{Connection, Msg, Fin, Subscribe, Config};
+use nsq_client::{Connection, Msg, Fin, Subscribe, Config};
 
 struct MyReader {
     pub conn: Arc<Addr<Connection>>,
