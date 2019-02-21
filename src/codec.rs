@@ -88,6 +88,9 @@ pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, Vec<u8>)> {
             let timestamp = cursor.get_i64_be();
             let attemps = cursor.get_u16_be();
             let id_body_bytes = &cursor.bytes()[..size - HEADER_LENGTH - 6];
+            if id_body_bytes.len() < 16 {
+                return None;
+            }
             let (id_bytes, body_bytes) = id_body_bytes.split_at(16);
             let id = match str::from_utf8(id_bytes) {
                 Ok(s) => s,
