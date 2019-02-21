@@ -1,6 +1,6 @@
 [package]
 name = "nsq-client"
-version = "0.1.11"
+version = "0.1.12"
 authors = ["Alessandro Cresto Miseroglio <alex179ohm@gmail.com>"]
 description = """
 Rust client for the NSQ realtime message processing system
