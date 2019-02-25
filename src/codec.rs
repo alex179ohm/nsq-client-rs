@@ -34,14 +34,14 @@ use tokio_io::codec::{Decoder, Encoder};
 use crate::error::Error;
 
 // Header: Size(4-Byte) + FrameType(4-Byte)
-const HEADER_LENGTH: usize = 8;
+pub const HEADER_LENGTH: usize = 8;
 
 // Frame Types
-const FRAME_TYPE_RESPONSE: i32 = 0x00;
-const FRAME_TYPE_ERROR: i32 = 0x01;
-const FRAME_TYPE_MESSAGE: i32 = 0x02;
+pub const FRAME_TYPE_RESPONSE: i32 = 0x00;
+pub const FRAME_TYPE_ERROR: i32 = 0x01;
+pub const FRAME_TYPE_MESSAGE: i32 = 0x02;
 
-const HEARTBEAT: &str = "_heartbeat_";
+pub const HEARTBEAT: &str = "_heartbeat_";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Cmd {
@@ -58,7 +58,7 @@ pub enum Cmd {
     ResponseError(String),
 
     /// Message response.
-    ResponseMsg(Vec<(i64, u16, String, Vec<u8>)>),
+    ResponseMsg(i64, u16, String, Vec<u8>),
 
     /// A simple Command whitch not sends msg.
     Command(String),
@@ -71,42 +71,27 @@ pub enum Cmd {
 }
 
 /// NSQ codec
-pub struct NsqCodec;
+pub struct NsqCodec {
+    pub msgs: Vec<Cmd>,
+}
 
-pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, Vec<u8>)> {
-    if buf.len() < 4 {
-        None
-    } else {
-        let frame = buf.clone();
-        let mut cursor = Cursor::new(frame);
-        let size = cursor.get_i32_be() as usize;
-        if buf.len() < size + 4 {
-            None
-        } else {
-            // skip frame_type
-            let ft = cursor.get_i32_be();
-            if ft != FRAME_TYPE_MESSAGE {
-                None
-            }
-            let timestamp = cursor.get_i64_be();
-            let attemps = cursor.get_u16_be();
-            let id_body_bytes = &cursor.bytes()[..size - HEADER_LENGTH - 6];
-            if id_body_bytes.len() < 16 {
-                return None;
-            }
-            let (id_bytes, body_bytes) = id_body_bytes.split_at(16);
-            let id = match str::from_utf8(id_bytes) {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("error deconding utf8 id: {}", e);
-                    return None;
-                }
-            };
-            // clean the buffer at frame size
-            buf.split_to(size + 4);
-            Some((timestamp, attemps, id.to_owned(), Vec::from(body_bytes)))
+pub fn decode_msg(buf: &mut BytesMut) -> (i64, u16, String, Vec<u8>) {
+    let mut cursor = Cursor::new(buf);
+    // skip size and frame type
+    let size = cursor.get_i32_be() as usize;
+    let _ = cursor.get_i32_be();
+    let timestamp = cursor.get_i64_be();
+    let attemps = cursor.get_u16_be();
+    let id_body_bytes = &cursor.bytes()[..size - HEADER_LENGTH - 6];
+    let (id_bytes, body_bytes) = id_body_bytes.split_at(16);
+    let id = match str::from_utf8(id_bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("error deconding utf8 id: {}", e);
+            ""
         }
-    }
+    };
+    (timestamp, attemps, id.to_owned(), Vec::from(body_bytes))
 }
 
 fn write_n(buf: &mut BytesMut) {
@@ -156,73 +141,62 @@ pub fn write_mmsg(buf: &mut BytesMut, cmd: String, msgs: Vec<String>) {
 }
 
 impl Decoder for NsqCodec {
-    type Item = Cmd;
+    type Item = Vec<Cmd>;
     type Error = Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let length = buf.len();
 
-        // if length is less than HEADER_LENGTH there is a problem
+        //// if length is less than HEADER_LENGTH there is a problem
         if length < HEADER_LENGTH {
             Ok(None)
         } else {
-            let mut cursor = Cursor::new(buf.clone());
-            let _size = cursor.get_i32_be() as usize;
-            // get frame type
-            let frame_type: i32 = cursor.get_i32_be();
-
-            // maybe we have a response type frame
-            if frame_type == FRAME_TYPE_RESPONSE {
-                // clean the buffer
-                buf.take();
-                match str::from_utf8(&cursor.bytes()) {
-                    // check for heartbeat
-                    Ok(s) => {
-                    if s == HEARTBEAT {
-                        info!("heartbeat");
-                        return Ok(Some(Cmd::Heartbeat))
-                    } else {
-                        // return response
-                        return Ok(Some(Cmd::Response(s.to_owned())))
-                    }
-                },
-                Err(e) => {
-                    // error parsing bytes as utf8
-                    return Err(Error::Internal(format!("Invalid UTF-8 Data: {}", e)));
-                },
-            }
-            // maybe it is a error type
-            } else if frame_type == FRAME_TYPE_ERROR {
-                // clean buffer
-                buf.take();
-                let s = String::from_utf8_lossy(cursor.bytes());
-                // it's a remote error (E_FIN_FAILED, E_REQ_FAILED, E_TOUCH_FAILED)
-                Ok(Some(Cmd::ResponseError(s.to_string())))
-            // it's a message
-            } else if frame_type == FRAME_TYPE_MESSAGE {
-                let mut resp_buf = buf.clone();
-                let mut msg_buf: Vec<(i64, u16, String, Vec<u8>)> = Vec::new();
-                let mut need_more = false;
-                info!("new message arrived: {:?}", resp_buf);
-                loop {
-                    if resp_buf.is_empty() {
-                        break;
-                    };
-                    if let Some((ts, at, id, bd)) = decode_msg(&mut resp_buf) {
-                        msg_buf.push((ts, at, id.to_owned(), bd));
-                    } else {
-                        need_more = true;
-                        break;
-                    }
-                }
-                if need_more {
-                    Ok(None)
-                } else {
+            let mut frame = buf.clone();
+            loop {
+                if frame.is_empty() {
+                    // all messages are processed
                     buf.take();
-                    Ok(Some(Cmd::ResponseMsg(msg_buf)))
+                    let msgs = self.msgs.clone();
+                    self.msgs.clear();
+                    return Ok(Some(msgs));
                 }
-            } else {
-                Err(Error::Remote("invalid frame type".to_owned()))
+                let mut cursor = Cursor::new(frame.clone());
+                let size = cursor.get_i32_be() as usize;
+                if frame.len() < size + 4 {
+                    // processing buffer too early
+                    return Ok(None);
+                }
+                let frame_type: i32 = cursor.get_i32_be();
+                if frame_type == FRAME_TYPE_RESPONSE {
+                    match str::from_utf8(&cursor.bytes()) {
+                        // check for heartbeat
+                        Ok(s) => {
+                            if s == HEARTBEAT {
+                                info!("heartbeat");
+                                self.msgs.push(Cmd::Heartbeat);
+                            } else {
+                                // return response
+                                info!("response");
+                                self.msgs.push(Cmd::Response(s.to_owned()));
+                            }
+                            frame.split_to(size + 4);
+                            continue;
+                        },
+                        Err(e) => {
+                            // error parsing bytes as utf8
+                            return Err(Error::Internal(format!("Invalid UTF-8 Data: {}", e)));
+                        },
+                    }
+                } else if frame_type == FRAME_TYPE_ERROR {
+                    let s = String::from_utf8_lossy(cursor.bytes());
+                    self.msgs.push(Cmd::ResponseError(s.into_owned()));
+                    frame.split_to(size + 4);
+                    continue;
+                } else if frame_type == FRAME_TYPE_MESSAGE {
+                    let (ts, at, id, bd) = decode_msg(&mut frame);
+                    self.msgs.push(Cmd::ResponseMsg(ts, at, id, bd));
+                    frame.split_to(size + 4);
+                }
             }
         }
     }

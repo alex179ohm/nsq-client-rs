@@ -121,8 +121,8 @@ impl Actor for Producer {
                     let (r, w) = stream.split();
 
                     // write connection
-                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec {}, ctx);
-                    let mut rx = FramedRead::new(r, NsqCodec {});
+                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
+                    let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
 
                     // send magic version
                     framed.write(Cmd::Magic(VERSION));
@@ -167,7 +167,7 @@ impl actix::io::WriteHandler<io::Error> for Producer {
 }
 
 // TODO: Implement error
-impl StreamHandler<Cmd, Error> for Producer {
+impl StreamHandler<Vec<Cmd>, Error> for Producer {
     fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
         match err {
             Error::Remote(err) => {
@@ -183,8 +183,8 @@ impl StreamHandler<Cmd, Error> for Producer {
         Running::Stop
     }
 
-    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context) {
-        match msg {
+    fn handle(&mut self, msg: Vec<Cmd>, ctx: &mut Self::Context) {
+        match msg[0] {
             Cmd::Heartbeat => {
                 debug!("received heartbeat");
                 if let Some(ref mut cell) = self.cell {
@@ -194,7 +194,7 @@ impl StreamHandler<Cmd, Error> for Producer {
                     ctx.stop();
                 }
             }
-            Cmd::Response(s) => {
+            Cmd::Response(ref s) => {
                 match self.state {
                     ConnState::Neg => {
                         let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
@@ -222,7 +222,7 @@ impl StreamHandler<Cmd, Error> for Producer {
                     _ => {
                         debug!("response: {}", s);
                         if let Some(tx) = self.queue.pop_front() {
-                            let _ = tx.send(Ok(Cmd::Response(s)));
+                            let _ = tx.send(Ok(Cmd::Response(s.to_owned())));
                         }
                     }
                 }

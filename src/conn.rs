@@ -273,7 +273,7 @@ impl actix::io::WriteHandler<io::Error> for Connection {
 }
 
 // TODO: implement error
-impl StreamHandler<Cmd, Error> for Connection {
+impl StreamHandler<Vec<Cmd>, Error> for Connection {
     fn finished(&mut self, ctx: &mut Self::Context) {
         error!("Nsqd connection dropped");
         ctx.stop();
@@ -284,67 +284,67 @@ impl StreamHandler<Cmd, Error> for Connection {
         Running::Stop
     }
 
-    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context) {
-        match msg {
-            Cmd::Heartbeat => {
-                if let Some(ref mut cell) = self.cell {
-                    cell.write(nop());
-                } else {
-                    error!("Nsqd connection dropped. trying reconnecting");
-                    ctx.stop();
-                }
-            }
-            Cmd::Response(s) => match self.state {
-                ConnState::Neg => {
-                    info!("trying negotiation [{}]", self.addr);
-                    let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
-                        Ok(s) => s,
-                        Err(err) => {
-                            error!("Negotiating json response invalid: {:?}", err);
-                            return ctx.stop();
-                        }
-                    };
-                    info!("configuration [{}] {:#?}", self.addr, config);
-                    self.info_on_identify(config.clone());
-                    if config.auth_required {
-                        info!("trying authentication [{}]", self.addr);
-                        ctx.notify(Auth);
+    fn handle(&mut self, msgs: Vec<Cmd>, ctx: &mut Self::Context) {
+        info!("msg: {:?}", msgs);
+        for msg in msgs {
+            match msg {
+                Cmd::Heartbeat => {
+                    if let Some(ref mut cell) = self.cell {
+                        cell.write(nop());
                     } else {
-                        info!(
-                            "subscribing [{}] topic: {} channel: {}",
-                            self.addr, self.topic, self.channel
-                        );
-                        ctx.notify(Sub);
+                        error!("Nsqd connection dropped. trying reconnecting");
+                        ctx.stop();
                     }
                 }
-                ConnState::Auth => {
-                    let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
-                        Ok(s) => s,
-                        Err(err) => {
-                            error!("Auth json response invalid: {:?}", err);
-                            return ctx.stop();
+                Cmd::Response(s) => match self.state {
+                    ConnState::Neg => {
+                        info!("trying negotiation [{}]", self.addr);
+                        let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
+                            Ok(s) => s,
+                            Err(err) => {
+                                error!("Negotiating json response invalid: {:?}", err);
+                                return ctx.stop();
+                            }
+                        };
+                        info!("configuration [{}] {:#?}", self.addr, config);
+                        self.info_on_identify(config.clone());
+                        if config.auth_required {
+                            info!("trying authentication [{}]", self.addr);
+                            ctx.notify(Auth);
+                        } else {
+                            info!(
+                                "subscribing [{}] topic: {} channel: {}",
+                                self.addr, self.topic, self.channel
+                            );
+                            ctx.notify(Sub);
                         }
-                    };
-                    info!("authenticated [{}] {:#?}", self.addr, auth_resp);
-                    self.info_on_auth(auth_resp);
-                    ctx.notify(Sub);
-                }
-                ConnState::Sub => {
-                    ctx.notify(Sub);
-                }
-                ConnState::Ready => {
-                    ctx.notify(Ready(self.rdy));
-                }
-                ConnState::Closing => {
-                    self.info_on_close(true);
-                    self.state = ConnState::Stopped;
-                }
-                _ => {}
-            },
-            // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
-            Cmd::ResponseMsg(msgs) => {
-                //let mut count = self.rdy;
-                for (timestamp, attemps, id, body) in msgs {
+                    }
+                    ConnState::Auth => {
+                        let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
+                            Ok(s) => s,
+                            Err(err) => {
+                                error!("Auth json response invalid: {:?}", err);
+                                return ctx.stop();
+                            }
+                        };
+                        info!("authenticated [{}] {:#?}", self.addr, auth_resp);
+                        self.info_on_auth(auth_resp);
+                        ctx.notify(Sub);
+                    }
+                    ConnState::Sub => {
+                        ctx.notify(Sub);
+                    }
+                    ConnState::Ready => {
+                        ctx.notify(Ready(self.rdy));
+                    }
+                    ConnState::Closing => {
+                        self.info_on_close(true);
+                        self.state = ConnState::Stopped;
+                    }
+                    _ => {}
+                },
+                // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
+                Cmd::ResponseMsg(timestamp, attemps, id, body) => {
                     if self.handler_ready > 0 {
                         self.handler_ready -= 1
                     };
@@ -368,21 +368,21 @@ impl StreamHandler<Cmd, Error> for Connection {
                         self.handler_ready = self.handlers.len()
                     }
                 }
-            }
-            Cmd::ResponseError(s) => {
-                if self.state == ConnState::Closing {
-                    error!("Closing connection: {}", s);
-                    self.info_on_close(false);
-                    self.state = ConnState::Started;
+                Cmd::ResponseError(s) => {
+                    if self.state == ConnState::Closing {
+                        error!("Closing connection: {}", s);
+                        self.info_on_close(false);
+                        self.state = ConnState::Started;
+                    }
+                    error!("failed: {}", s);
                 }
-                error!("failed: {}", s);
-            }
-            Cmd::Command(_) => {
-                if let Some(ref mut cell) = self.cell {
-                    cell.write(rdy(1));
+                Cmd::Command(_) => {
+                    if let Some(ref mut cell) = self.cell {
+                        cell.write(rdy(1));
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
@@ -401,8 +401,8 @@ impl Handler<TcpConnect> for Connection {
                     let (r, w) = stream.split();
 
                     // configure write side of the connection
-                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec {}, ctx);
-                    let mut rx = FramedRead::new(r, NsqCodec {});
+                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
+                    let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
                     framed.write(Cmd::Magic(VERSION));
                     // send configuration to nsqd
                     let json = match serde_json::to_string(&act.config) {
@@ -527,7 +527,7 @@ impl Handler<Backoff> for Connection {
                 self.state = ConnState::Backoff;
             } else {
                 error!("backoff failed: connection dropped [{}]", self.addr);
-                Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
+                Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
             }
             self.info_in_flight(0);
             self.info_on_backoff();
@@ -543,7 +543,7 @@ impl Handler<Resume> for Connection {
             self.state = ConnState::Resume;
         } else {
             error!("resume failed: connection dropped [{}]", self.addr);
-            Self::add_stream(once::<Cmd, Error>(Err(Error::NotConnected)), ctx);
+            Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
         }
         self.info_in_flight(1);
         self.info_on_resume();

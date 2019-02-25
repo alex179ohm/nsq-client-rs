@@ -67,12 +67,12 @@ fn main() {
     let config = Config::new().client_id("consumer");
     let secret = "".to_owned();
     let c = Supervisor::start(|_| Connection::new(
-            "chunk", // topic
-            "0", //channel
-            "tangram-monitor.tngrm.io:4150", //nsqd tcp address
+            "test", // topic
+            "test", //channel
+            "0.0.0.0:4150", //nsqd tcp address
             Some(config), //config (Optional see mod config for defaults, if None Consumer sets defaults)
-            Some(secret), // secret for Auth (Optional)
-            Some(1), // rdy (optional if None set rdy to 1)
+            None,// Some(secret), // secret for Auth (Optional)
+            Some(2), // rdy (optional if None set rdy to 1)
     ));
     let conn = Arc::new(c);
     let _ = MyReader(conn.clone()).start(); // same thread reader
