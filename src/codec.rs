@@ -84,7 +84,10 @@ pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, Vec<u8>)> {
             None
         } else {
             // skip frame_type
-            let _ = cursor.get_i32_be();
+            let ft = cursor.get_i32_be();
+            if ft != FRAME_TYPE_MESSAGE {
+                None
+            }
             let timestamp = cursor.get_i64_be();
             let attemps = cursor.get_u16_be();
             let id_body_bytes = &cursor.bytes()[..size - HEADER_LENGTH - 6];
