@@ -172,19 +172,22 @@ impl Decoder for NsqCodec {
             if frame_type == FRAME_TYPE_RESPONSE {
                 // clean the buffer
                 buf.take();
-                if let Ok(s) = str::from_utf8(&cursor.bytes()) {
+                match str::from_utf8(&cursor.bytes()) {
                     // check for heartbeat
+                    Ok(s) => {
                     if s == HEARTBEAT {
                         info!("heartbeat");
-                        Ok(Some(Cmd::Heartbeat))
+                        return Ok(Some(Cmd::Heartbeat))
                     } else {
                         // return response
-                        Ok(Some(Cmd::Response(s.to_owned())))
+                        return Ok(Some(Cmd::Response(s.to_owned())))
                     }
-                } else {
+                },
+                Err(e) => {
                     // error parsing bytes as utf8
-                    Err(Error::Internal("Invalid UTF-8 Data".to_owned()))
-                }
+                    return Err(Error::Internal(format!("Invalid UTF-8 Data: {}", e)));
+                },
+            }
             // maybe it is a error type
             } else if frame_type == FRAME_TYPE_ERROR {
                 // clean buffer
