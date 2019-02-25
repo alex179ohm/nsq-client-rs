@@ -23,17 +23,14 @@
 
 use actix::prelude::*;
 
-use crate::codec::Cmd;
-use crate::error::Error;
 use crate::auth::AuthResp;
+use crate::codec::Cmd;
 use crate::config::NsqdConfig;
+use crate::error::Error;
 
 pub trait NsqMsg: Message<Result = ()> + Send + 'static {}
 
-impl<M> NsqMsg for M
-where
-    M: Message<Result = ()> + Send + 'static
-{}
+impl<M> NsqMsg for M where M: Message<Result = ()> + Send + 'static {}
 
 #[derive(Message)]
 pub struct AddHandler<M: NsqMsg>(pub Recipient<M>);
@@ -64,8 +61,7 @@ pub struct AddHandler<M: NsqMsg>(pub Recipient<M>);
 ///
 /// ```
 #[derive(Clone, Debug, Message)]
-pub struct Msg
-{
+pub struct Msg {
     /// Timestamp of the message
     pub timestamp: i64,
     /// Number of attemps reader tried to process the message
@@ -425,8 +421,6 @@ pub struct Cls;
 #[derive(Clone, Debug)]
 pub struct Pub(pub String);
 
-impl Message for Pub
-{
+impl Message for Pub {
     type Result = Result<Cmd, Error>;
 }
-

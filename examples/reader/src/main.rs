@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use actix::prelude::*;
 
-use nsq_client::{Connection, Msg, Fin, Subscribe, Config};
+use nsq_client::{Connection, Msg, Fin, Subscribe, Config, OnAuth};
 
 struct MyReader(pub Arc<Addr<Connection>>);
 
@@ -65,17 +65,16 @@ fn main() {
     env_logger::init();
     let sys = System::new("nsq-consumer");
     let config = Config::new().client_id("consumer");
-    let secret = "mysecrettoken".to_owned();
+    let secret = "".to_owned();
     let c = Supervisor::start(|_| Connection::new(
-            "test", // topic
-            "test", //channel
-            "0.0.0.0:4150", //nsqd tcp address
+            "chunk", // topic
+            "0", //channel
+            "tangram-monitor.tngrm.io:4150", //nsqd tcp address
             Some(config), //config (Optional see mod config for defaults, if None Consumer sets defaults)
             Some(secret), // secret for Auth (Optional)
-            Some(2), // rdy (optional if None set rdy to 1)
+            Some(1), // rdy (optional if None set rdy to 1)
     ));
     let conn = Arc::new(c);
     let _ = MyReader(conn.clone()).start(); // same thread reader
-    let _ = Arbiter::start(move |_| MyReader(conn)); // other thread reader
     sys.run();
 }

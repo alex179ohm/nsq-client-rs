@@ -21,7 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 
 /// Configuration sent to nsqd to properly config the [Connection](struct.Connection.html)
 ///
@@ -89,7 +89,7 @@ pub struct Config {
     pub output_buffer_timeout: u32,
 
     /// Enable TLS negotiation
-    /// 
+    ///
     /// Default: **false** (Not implemented)
     pub tls_v1: bool,
 
@@ -126,7 +126,6 @@ pub struct Config {
     ///
     /// Default: **0**
     pub message_timeout: u32,
-
 }
 use hostname::get_hostname;
 
@@ -179,7 +178,9 @@ impl Config {
     /// }
     /// ```
     pub fn new() -> Config {
-        Config{ ..Default::default() }
+        Config {
+            ..Default::default()
+        }
     }
 
     /// Change [client_id](struct.Config.html#structfield.client_id)

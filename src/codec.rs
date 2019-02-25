@@ -1,18 +1,18 @@
 // MIT License
-// 
+//
 // Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
 // Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -28,8 +28,8 @@ use std::io::{self, Cursor};
 use std::str;
 
 use bytes::{Buf, BufMut, BytesMut};
-use tokio_io::codec::{Encoder, Decoder};
-use log::error;
+use log::{error, info};
+use tokio_io::codec::{Decoder, Encoder};
 
 use crate::error::Error;
 
@@ -97,10 +97,10 @@ pub fn decode_msg(buf: &mut BytesMut) -> Option<(i64, u16, String, Vec<u8>)> {
                 Err(e) => {
                     error!("error deconding utf8 id: {}", e);
                     return None;
-                },
+                }
             };
             // clean the buffer at frame size
-            buf.split_to(size+4);
+            buf.split_to(size + 4);
             Some((timestamp, attemps, id.to_owned(), Vec::from(body_bytes)))
         }
     }
@@ -117,7 +117,7 @@ fn check_and_reserve(buf: &mut BytesMut, size: usize) {
     }
 }
 
-/// write command in buffer and append 0x2 ("\n")
+/// write command in buffer and append 0x2 ('\n')
 fn write_cmd(buf: &mut BytesMut, cmd: String) {
     let cmd_as_bytes = cmd.as_bytes();
     let size = cmd_as_bytes.len() + 1;
@@ -173,8 +173,9 @@ impl Decoder for NsqCodec {
                 // clean the buffer
                 buf.take();
                 if let Ok(s) = str::from_utf8(&cursor.bytes()) {
-                        // check for heartbeat
+                    // check for heartbeat
                     if s == HEARTBEAT {
+                        info!("heartbeat");
                         Ok(Some(Cmd::Heartbeat))
                     } else {
                         // return response
@@ -189,15 +190,18 @@ impl Decoder for NsqCodec {
                 // clean buffer
                 buf.take();
                 let s = String::from_utf8_lossy(cursor.bytes());
-                    // it's a remote error (E_FIN_FAILED, E_REQ_FAILED, E_TOUCH_FAILED)
+                // it's a remote error (E_FIN_FAILED, E_REQ_FAILED, E_TOUCH_FAILED)
                 Ok(Some(Cmd::ResponseError(s.to_string())))
             // it's a message
             } else if frame_type == FRAME_TYPE_MESSAGE {
                 let mut resp_buf = buf.clone();
                 let mut msg_buf: Vec<(i64, u16, String, Vec<u8>)> = Vec::new();
                 let mut need_more = false;
+                info!("new message arrived: {:?}", resp_buf);
                 loop {
-                    if resp_buf.is_empty() { break };
+                    if resp_buf.is_empty() {
+                        break;
+                    };
                     if let Some((ts, at, id, bd)) = decode_msg(&mut resp_buf) {
                         msg_buf.push((ts, at, id.to_owned(), bd));
                     } else {
@@ -218,7 +222,6 @@ impl Decoder for NsqCodec {
     }
 }
 
-
 impl Encoder for NsqCodec {
     type Item = Cmd;
     type Error = io::Error;
@@ -233,20 +236,19 @@ impl Encoder for NsqCodec {
             }
             Cmd::Command(cmd) => {
                 write_cmd(buf, cmd);
+                info!("fin sent codec");
                 Ok(())
-            },
+            }
             Cmd::Msg(cmd, msg) => {
                 write_cmd(buf, cmd);
                 write_msg(buf, msg);
                 Ok(())
-            },
+            }
             Cmd::MMsg(cmd, msgs) => {
                 write_mmsg(buf, cmd, msgs);
                 Ok(())
-            },
-            _ => {
-                Err(io::Error::new(io::ErrorKind::Other, "Failed encoding data"))
-            },
+            }
+            _ => Err(io::Error::new(io::ErrorKind::Other, "Failed encoding data")),
         }
     }
 }

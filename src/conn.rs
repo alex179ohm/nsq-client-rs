@@ -21,31 +21,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use std::io;
 use std::any::{Any, TypeId};
+use std::io;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
 use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
+use fnv::FnvHashMap;
+use futures::stream::once;
 use log::{error, info};
 use serde_json;
 use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
 use tokio_io::AsyncRead;
 use tokio_tcp::TcpStream;
-use futures::stream::once;
-use fnv::FnvHashMap;
 
-use crate::codec::{NsqCodec, Cmd};
-use crate::commands::{identify, nop, rdy, sub, fin, auth, VERSION};
+use crate::auth::AuthResp;
+use crate::codec::{Cmd, NsqCodec};
+use crate::commands::{auth, fin, identify, nop, rdy, sub, VERSION};
 use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
-    Auth, OnAuth, Sub, Ready, Cls,
-    Resume, Backoff, Fin, Msg,
-    NsqMsg, AddHandler, InFlight, OnIdentify, OnClose, OnBackoff, OnResume};
-use crate::auth::AuthResp;
+    AddHandler, Auth, Backoff, Cls, Fin, InFlight, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
+    OnIdentify, OnResume, Ready, Resume, Sub,
+};
 
 #[derive(Message, Clone)]
 pub struct TcpConnect(pub String);
@@ -79,14 +79,13 @@ pub enum ConnState {
 ///         "test", // <- channel
 ///         "0.0.0.0:4150", // <- nsqd tcp address
 ///         None, // <- config (Optional)
-///         None, // <- secret used by Auth
-///         Some(1) // <- RDY setting for the Connection
+///         None, // <- secret used by Auth (Optional)
+///         Some(1) // <- Initial RDY setting for the Connection
 ///     ));
 ///     sys.run();
 /// }
 /// ```
-pub struct Connection
-{
+pub struct Connection {
     addr: String,
     handlers: Vec<Box<Any>>,
     info_hashmap: FnvHashMap<TypeId, Box<Any>>,
@@ -103,8 +102,7 @@ pub struct Connection
     handler_ready: usize,
 }
 
-impl Default for Connection
-{
+impl Default for Connection {
     fn default() -> Connection {
         Connection {
             handlers: Vec::new(),
@@ -125,8 +123,7 @@ impl Default for Connection
     }
 }
 
-impl Connection
-{
+impl Connection {
     /// Return a Tcp Connection to nsqd.
     ///
     /// * `topic`    - Topic String
@@ -141,8 +138,8 @@ impl Connection
         addr: S,
         config: Option<Config>,
         secret: Option<String>,
-        rdy: Option<u32>) -> Connection
-    {
+        rdy: Option<u32>,
+    ) -> Connection {
         let mut tcp_backoff = ExponentialBackoff::default();
         let backoff = ExponentialBackoff::default();
         let cfg = match config {
@@ -170,7 +167,7 @@ impl Connection
             handlers: Vec::new(),
             info_hashmap: FnvHashMap::default(),
             addr: addr.into(),
-            rdy: rdy,
+            rdy,
             in_flight: 0,
             handler_ready: 0,
         }
@@ -178,15 +175,12 @@ impl Connection
 }
 
 impl Connection {
-
     fn info_in_flight(&self, n: u32) {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<InFlight>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<InFlight>>() {
                 match handler.do_send(InFlight(n)) {
-                    Ok(_) => {},
-                    Err(e) => {
-                        error!("sending InFlight: {}", e)
-                    }
+                    Ok(_) => {}
+                    Err(e) => error!("sending InFlight: {}", e),
                 }
             }
         }
@@ -196,7 +190,7 @@ impl Connection {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
                 match handler.do_send(OnAuth(resp)) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("sending OnAuth: {}", e);
                     }
@@ -206,10 +200,13 @@ impl Connection {
     }
 
     fn info_on_identify(&self, resp: NsqdConfig) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnIdentify>>()) {
+        if let Some(box_handler) = self
+            .info_hashmap
+            .get(&TypeId::of::<Recipient<OnIdentify>>())
+        {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnIdentify>>() {
                 match handler.do_send(OnIdentify(resp)) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("sending OnIdentify: {}", e);
                     }
@@ -222,7 +219,7 @@ impl Connection {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnClose>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnClose>>() {
                 match handler.do_send(OnClose(resp)) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("sending OnClose: {}", e);
                     }
@@ -235,7 +232,7 @@ impl Connection {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnBackoff>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnBackoff>>() {
                 match handler.do_send(OnBackoff) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("sending OnBackoff: {}", e);
                     }
@@ -248,7 +245,7 @@ impl Connection {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnResume>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnResume>>() {
                 match handler.do_send(OnResume) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         error!("sending OnBackoff: {}", e);
                     }
@@ -258,8 +255,7 @@ impl Connection {
     }
 }
 
-impl Actor for Connection
-{
+impl Actor for Connection {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
@@ -269,18 +265,15 @@ impl Actor for Connection
     }
 }
 
-impl actix::io::WriteHandler<io::Error> for Connection
-{
+impl actix::io::WriteHandler<io::Error> for Connection {
     fn error(&mut self, err: io::Error, _: &mut Self::Context) -> Running {
-        error!("nsqd connection dropped: {}", err);
+        error!("Nsqd connection dropped: {}", err);
         Running::Stop
     }
 }
 
 // TODO: implement error
-impl StreamHandler<Cmd, Error> for Connection
-{
-
+impl StreamHandler<Cmd, Error> for Connection {
     fn finished(&mut self, ctx: &mut Self::Context) {
         error!("Nsqd connection dropped");
         ctx.stop();
@@ -288,11 +281,10 @@ impl StreamHandler<Cmd, Error> for Connection
 
     fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
         error!("Something goes wrong decoding message: {}", err);
-        Running::Stop
+        //Running::Stop
     }
 
-    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context)
-    {
+    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context) {
         match msg {
             Cmd::Heartbeat => {
                 if let Some(ref mut cell) = self.cell {
@@ -302,74 +294,81 @@ impl StreamHandler<Cmd, Error> for Connection
                     ctx.stop();
                 }
             }
-            Cmd::Response(s) => {
-                match self.state {
-                    ConnState::Neg => {
-                        info!("trying negotiation [{}]", self.addr);
-                        let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => { s },
-                            Err(err) => {
-                                error!("Negotiating json response invalid: {:?}", err);
-                                return ctx.stop();
-                            }
-                        };
-                        info!("configuration [{}] {:#?}", self.addr, config);
-                        self.info_on_identify(config.clone());
-                        if config.auth_required {
-                            info!("trying authentication [{}]", self.addr);
-                            ctx.notify(Auth);
-                        } else {
-                            info!("subscribing [{}] topic: {} channel: {}", self.addr, self.topic, self.channel);
-                            ctx.notify(Sub);
+            Cmd::Response(s) => match self.state {
+                ConnState::Neg => {
+                    info!("trying negotiation [{}]", self.addr);
+                    let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
+                        Ok(s) => s,
+                        Err(err) => {
+                            error!("Negotiating json response invalid: {:?}", err);
+                            return ctx.stop();
                         }
-                    },
-                    ConnState::Auth => {
-                        let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => { s },
-                            Err(err) => {
-                                error!("Auth json response invalid: {:?}", err);
-                                return ctx.stop();
-                            }
-                        };
-                        info!("authenticated [{}] {:#?}", self.addr, auth_resp);
-                        self.info_on_auth(auth_resp);
+                    };
+                    info!("configuration [{}] {:#?}", self.addr, config);
+                    self.info_on_identify(config.clone());
+                    if config.auth_required {
+                        info!("trying authentication [{}]", self.addr);
+                        ctx.notify(Auth);
+                    } else {
+                        info!(
+                            "subscribing [{}] topic: {} channel: {}",
+                            self.addr, self.topic, self.channel
+                        );
                         ctx.notify(Sub);
-                    },
-                    ConnState::Sub => {
-                        ctx.notify(Sub);
-                    },
-                    ConnState::Ready => {
-                        ctx.notify(Ready(self.rdy));
-                    },
-                    ConnState::Closing => {
-                        self.info_on_close(true);
-                        self.state = ConnState::Stopped;
-                    },
-                    _ => {},
+                    }
                 }
-            }
+                ConnState::Auth => {
+                    let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
+                        Ok(s) => s,
+                        Err(err) => {
+                            error!("Auth json response invalid: {:?}", err);
+                            return ctx.stop();
+                        }
+                    };
+                    info!("authenticated [{}] {:#?}", self.addr, auth_resp);
+                    self.info_on_auth(auth_resp);
+                    ctx.notify(Sub);
+                }
+                ConnState::Sub => {
+                    ctx.notify(Sub);
+                }
+                ConnState::Ready => {
+                    ctx.notify(Ready(self.rdy));
+                }
+                ConnState::Closing => {
+                    self.info_on_close(true);
+                    self.state = ConnState::Stopped;
+                }
+                _ => {}
+            },
             // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
             Cmd::ResponseMsg(msgs) => {
                 //let mut count = self.rdy;
                 for (timestamp, attemps, id, body) in msgs {
-                    if self.handler_ready > 0 { self.handler_ready -= 1 };
+                    if self.handler_ready > 0 {
+                        self.handler_ready -= 1
+                    };
                     if let Some(handler) = self.handlers.get(self.handler_ready) {
                         if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
-                            match rec.do_send(Msg{
-                                timestamp, attemps, id, body,
+                            match rec.do_send(Msg {
+                                timestamp,
+                                attemps,
+                                id,
+                                body,
                             }) {
                                 Ok(_s) => {
                                     self.in_flight += 1;
                                     self.info_in_flight(self.in_flight);
-                                },
-                                Err(e) => { error!("error sending msg to reader: {}", e) }
+                                }
+                                Err(e) => error!("sending msg to reader: {}", e),
                             }
-
                         }
                     }
-                    if self.handler_ready == 0 { self.handler_ready = self.handlers.len() }
+                    if self.handler_ready == 0 {
+                        self.handler_ready = self.handlers.len()
+                    }
                 }
-            },
+            }
             Cmd::ResponseError(s) => {
                 if self.state == ConnState::Closing {
                     error!("Closing connection: {}", s);
@@ -383,15 +382,14 @@ impl StreamHandler<Cmd, Error> for Connection
                     cell.write(rdy(1));
                 }
             }
-            _ => {},
+            _ => {}
         }
     }
 }
 
-impl Handler<TcpConnect> for Connection
-{
-    type Result=();
-    fn handle(&mut self, msg:TcpConnect, ctx: &mut Self::Context) {
+impl Handler<TcpConnect> for Connection {
+    type Result = ();
+    fn handle(&mut self, msg: TcpConnect, ctx: &mut Self::Context) {
         Resolver::from_registry()
             .send(Connect::host(msg.0.as_str()))
             .into_actor(self)
@@ -403,9 +401,8 @@ impl Handler<TcpConnect> for Connection
                     let (r, w) = stream.split();
 
                     // configure write side of the connection
-                    let mut framed =
-                        actix::io::FramedWrite::new(w, NsqCodec{}, ctx);
-                    let mut rx = FramedRead::new(r, NsqCodec{});
+                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec {}, ctx);
+                    let mut rx = FramedRead::new(r, NsqCodec {});
                     framed.write(Cmd::Magic(VERSION));
                     // send configuration to nsqd
                     let json = match serde_json::to_string(&act.config) {
@@ -445,20 +442,20 @@ impl Handler<TcpConnect> for Connection
 }
 
 impl Handler<Cls> for Connection {
-    type Result=();
+    type Result = ();
     fn handle(&mut self, _msg: Cls, ctx: &mut Self::Context) {
         self.state = ConnState::Closing;
         ctx.stop();
     }
 }
 
-impl Handler<Fin> for Connection
-{
+impl Handler<Fin> for Connection {
     type Result = ();
     fn handle(&mut self, msg: Fin, ctx: &mut Self::Context) {
         // discard the in_flight messages
         if let Some(ref mut cell) = self.cell {
             cell.write(fin(&msg.0));
+            info!("Conn fin sent");
         }
         if self.state == ConnState::Resume {
             ctx.notify(Ready(self.rdy));
@@ -469,14 +466,13 @@ impl Handler<Fin> for Connection
     }
 }
 
-impl Handler<Ready> for Connection
-{
+impl Handler<Ready> for Connection {
     type Result = ();
 
     fn handle(&mut self, msg: Ready, _ctx: &mut Self::Context) {
         if self.state != ConnState::Ready {
             self.rdy = msg.0;
-            return
+            return;
         }
         if let Some(ref mut cell) = self.cell {
             cell.write(rdy(msg.0));
@@ -484,14 +480,14 @@ impl Handler<Ready> for Connection
         if self.state == ConnState::Started {
             self.rdy = msg.0;
             info!("rdy updated [{}]", self.addr);
-
-        } else { self.state = ConnState::Started; info!("Ready to go [{}] RDY: {}", self.addr, msg.0); }
+        } else {
+            self.state = ConnState::Started;
+            info!("Ready to go [{}] RDY: {}", self.addr, msg.0);
+        }
     }
 }
 
-
-impl Handler<Auth> for Connection
-{
+impl Handler<Auth> for Connection {
     type Result = ();
     fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
@@ -504,8 +500,7 @@ impl Handler<Auth> for Connection
     }
 }
 
-impl Handler<Sub> for Connection
-{
+impl Handler<Sub> for Connection {
     type Result = ();
     fn handle(&mut self, _msg: Sub, ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
@@ -515,13 +510,15 @@ impl Handler<Sub> for Connection
             ctx.stop();
         }
         self.state = ConnState::Ready;
-        info!("subscribed [{}] topic: {} channel: {}", self.addr, self.topic, self.channel);
+        info!(
+            "subscribed [{}] topic: {} channel: {}",
+            self.addr, self.topic, self.channel
+        );
     }
 }
 
-impl Handler<Backoff> for Connection
-{
-    type Result=();
+impl Handler<Backoff> for Connection {
+    type Result = ();
     fn handle(&mut self, _msg: Backoff, ctx: &mut Self::Context) {
         if let Some(timeout) = self.backoff.next_backoff() {
             if let Some(ref mut cell) = self.cell {
@@ -538,9 +535,8 @@ impl Handler<Backoff> for Connection
     }
 }
 
-impl Handler<Resume> for Connection
-{
-    type Result=();
+impl Handler<Resume> for Connection {
+    type Result = ();
     fn handle(&mut self, _msg: Resume, ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
             cell.write(rdy(1));
@@ -554,9 +550,8 @@ impl Handler<Resume> for Connection
     }
 }
 
-impl<M: NsqMsg> Handler<AddHandler<M>> for Connection
-{
-    type Result=();
+impl<M: NsqMsg> Handler<AddHandler<M>> for Connection {
+    type Result = ();
     fn handle(&mut self, msg: AddHandler<M>, _: &mut Self::Context) {
         let msg_id = TypeId::of::<Recipient<M>>();
         if msg_id == TypeId::of::<Recipient<Msg>>() {
@@ -569,8 +564,7 @@ impl<M: NsqMsg> Handler<AddHandler<M>> for Connection
     }
 }
 
-impl Supervised for Connection
-{
+impl Supervised for Connection {
     fn restarting(&mut self, ctx: &mut Self::Context) {
         if self.state == ConnState::Stopped {
             ctx.stop();

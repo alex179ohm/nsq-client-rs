@@ -1,18 +1,18 @@
 // MIT License
-// 
+//
 // Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
 // Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,16 +21,16 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use std::io;
 use std::collections::VecDeque;
+use std::io;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
-use futures::unsync::oneshot;
-use futures::Future;
 use backoff::backoff::Backoff;
 use backoff::ExponentialBackoff;
-use log::{error, info, debug};
+use futures::unsync::oneshot;
+use futures::Future;
+use log::{debug, error, info};
 use serde_json;
 use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
@@ -38,15 +38,14 @@ use tokio_io::AsyncRead;
 use tokio_tcp::TcpStream;
 //use bytes::BytesMut;
 
-use crate::codec::{NsqCodec, Cmd};
-use crate::commands::{identify, nop, auth, sub, rdy, publish, VERSION};
+use crate::codec::{Cmd, NsqCodec};
+use crate::commands::{auth, identify, nop, publish, rdy, sub, VERSION};
 use crate::config::{Config, NsqdConfig};
-use crate::error::Error;
-use crate::msgs::{Auth, Pub, Sub, Ready};
 use crate::conn::ConnState;
+use crate::error::Error;
+use crate::msgs::{Auth, Pub, Ready, Sub};
 
-pub struct Producer
-{
+pub struct Producer {
     topic: String,
     channel: String,
     addr: String,
@@ -56,11 +55,10 @@ pub struct Producer
     state: ConnState,
     queue: VecDeque<oneshot::Sender<Result<Cmd, Error>>>,
     auth: String,
-//    rdy: u32,
+    //    rdy: u32,
 }
 
-impl Default for Producer
-{
+impl Default for Producer {
     fn default() -> Producer {
         Producer {
             topic: String::new(),
@@ -72,20 +70,19 @@ impl Default for Producer
             state: ConnState::Neg,
             queue: VecDeque::new(),
             auth: String::new(),
- //           rdy: 0,
+            //           rdy: 0,
         }
     }
 }
 
-impl Producer
-{
+impl Producer {
     pub fn new<S: Into<String>>(
         topic: S,
         channel: S,
         addr: S,
         config: Option<Config>,
         auth: S,
- //       rdy: Option<u32>,
+        //       rdy: Option<u32>,
     ) -> Producer {
         let mut backoff = ExponentialBackoff::default();
         let mut _rdy = 0;
@@ -105,13 +102,12 @@ impl Producer
             state: ConnState::Neg,
             queue: VecDeque::new(),
             auth: auth.into(),
-  //          rdy: _rdy,
+            //          rdy: _rdy,
         }
     }
 }
 
-impl Actor for Producer
-{
+impl Actor for Producer {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Context<Self>) {
@@ -125,9 +121,8 @@ impl Actor for Producer
                     let (r, w) = stream.split();
 
                     // write connection
-                    let mut framed =
-                        actix::io::FramedWrite::new(w, NsqCodec{}, ctx);
-                    let mut rx = FramedRead::new(r, NsqCodec{});
+                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec {}, ctx);
+                    let mut rx = FramedRead::new(r, NsqCodec {});
 
                     // send magic version
                     framed.write(Cmd::Magic(VERSION));
@@ -164,8 +159,7 @@ impl Actor for Producer
     }
 }
 
-impl actix::io::WriteHandler<io::Error> for Producer
-{
+impl actix::io::WriteHandler<io::Error> for Producer {
     fn error(&mut self, err: io::Error, _: &mut Self::Context) -> Running {
         error!("nsqd connection dropped: {} error: {}", self.addr, err);
         Running::Stop
@@ -173,25 +167,23 @@ impl actix::io::WriteHandler<io::Error> for Producer
 }
 
 // TODO: Implement error
-impl StreamHandler<Cmd, Error> for Producer
-{
+impl StreamHandler<Cmd, Error> for Producer {
     fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
         match err {
             Error::Remote(err) => {
                 if let Some(tx) = self.queue.pop_front() {
                     let _ = tx.send(Err(Error::Remote(err)));
                 }
-                return Running::Continue
-            },
+                return Running::Continue;
+            }
             _ => {
                 error!("Something goes wrong decoding message");
-            },
+            }
         };
         Running::Stop
     }
 
-    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context)
-    {
+    fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context) {
         match msg {
             Cmd::Heartbeat => {
                 debug!("received heartbeat");
@@ -219,10 +211,10 @@ impl StreamHandler<Cmd, Error> for Producer
                             //ctx.notify(Sub);
                             self.state = ConnState::Started;
                         }
-                    },
+                    }
                     ConnState::Sub => {
                         ctx.notify(Sub);
-                    },
+                    }
                     ConnState::Ready => {
                         debug!("sub response: {}", s);
                         ctx.notify(Ready(0));
@@ -232,16 +224,15 @@ impl StreamHandler<Cmd, Error> for Producer
                         if let Some(tx) = self.queue.pop_front() {
                             let _ = tx.send(Ok(Cmd::Response(s)));
                         }
-                    },
+                    }
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 }
 
-impl Handler<Auth> for Producer
-{
+impl Handler<Auth> for Producer {
     type Result = ();
     fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
@@ -252,11 +243,9 @@ impl Handler<Auth> for Producer
         }
         self.state = ConnState::Sub;
     }
-
 }
 
-impl Handler<Sub> for Producer
-{
+impl Handler<Sub> for Producer {
     type Result = ();
 
     fn handle(&mut self, _msg: Sub, _ctx: &mut Self::Context) {
@@ -269,21 +258,20 @@ impl Handler<Sub> for Producer
     }
 }
 
-impl Handler<Ready> for Producer
-{
+impl Handler<Ready> for Producer {
     type Result = ();
 
     fn handle(&mut self, msg: Ready, _ctx: &mut Self::Context) {
         if let Some(ref mut cell) = self.cell {
             cell.write(rdy(msg.0));
         }
-        if self.state != ConnState::Started { self.state = ConnState::Started }
+        if self.state != ConnState::Started {
+            self.state = ConnState::Started
+        }
     }
 }
 
-
-impl Handler<Pub> for Producer
-{
+impl Handler<Pub> for Producer {
     type Result = ResponseFuture<Cmd, Error>;
 
     fn handle(&mut self, msg: Pub, _ctx: &mut Self::Context) -> Self::Result {
@@ -301,8 +289,6 @@ impl Handler<Pub> for Producer
     }
 }
 
-
-impl Supervised for Producer
-{
+impl Supervised for Producer {
     fn restarting(&mut self, _: &mut Self::Context) {}
 }
