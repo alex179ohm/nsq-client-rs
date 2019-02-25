@@ -281,7 +281,7 @@ impl StreamHandler<Cmd, Error> for Connection {
 
     fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
         error!("Something goes wrong decoding message: {}", err);
-        Running::Continue
+        Running::Stop
     }
 
     fn handle(&mut self, msg: Cmd, ctx: &mut Self::Context) {
