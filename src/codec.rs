@@ -28,7 +28,7 @@ use std::io::{self, Cursor};
 use std::str;
 
 use bytes::{Buf, BufMut, BytesMut};
-use log::{error, info};
+use log::{error, debug};
 use tokio_io::codec::{Decoder, Encoder};
 
 use crate::error::Error;
@@ -172,11 +172,11 @@ impl Decoder for NsqCodec {
                         // check for heartbeat
                         Ok(s) => {
                             if s == HEARTBEAT {
-                                info!("heartbeat");
+                                debug!("heartbeat");
                                 self.msgs.push(Cmd::Heartbeat);
                             } else {
                                 // return response
-                                info!("response");
+                                debug!("response: {}", s.to_owned());
                                 self.msgs.push(Cmd::Response(s.to_owned()));
                             }
                             frame.split_to(size + 4);
@@ -216,7 +216,6 @@ impl Encoder for NsqCodec {
             }
             Cmd::Command(cmd) => {
                 write_cmd(buf, cmd);
-                info!("fin sent codec");
                 Ok(())
             }
             Cmd::Msg(cmd, msg) => {

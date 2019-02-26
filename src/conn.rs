@@ -30,6 +30,7 @@ use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
 use futures::stream::once;
+use futures::Future;
 use log::{error, info};
 use serde_json;
 use tokio_codec::FramedRead;
@@ -49,6 +50,9 @@ use crate::msgs::{
 
 #[derive(Message, Clone)]
 pub struct TcpConnect(pub String);
+
+#[derive(Message)]
+pub struct SendMsg;
 
 #[derive(Debug, PartialEq)]
 pub enum ConnState {
@@ -86,8 +90,10 @@ pub enum ConnState {
 /// }
 /// ```
 pub struct Connection {
+    msgs: Vec<(i64, u16, String, Vec<u8>)>,
     addr: String,
     handlers: Vec<Box<Any>>,
+    handlers_busy: FnvHashMap<String, Box<Any>>,
     info_hashmap: FnvHashMap<TypeId, Box<Any>>,
     topic: String,
     channel: String,
@@ -105,7 +111,9 @@ pub struct Connection {
 impl Default for Connection {
     fn default() -> Connection {
         Connection {
+            msgs: Vec::new(),
             handlers: Vec::new(),
+            handlers_busy: FnvHashMap::default(),
             info_hashmap: FnvHashMap::default(),
             topic: String::new(),
             channel: String::new(),
@@ -156,6 +164,7 @@ impl Connection {
         };
         tcp_backoff.max_elapsed_time = None;
         Connection {
+            msgs: Vec::new(),
             config: cfg,
             secret: scrt,
             tcp_backoff,
@@ -165,6 +174,7 @@ impl Connection {
             channel: channel.into(),
             state: ConnState::Neg,
             handlers: Vec::new(),
+            handlers_busy: FnvHashMap::default(),
             info_hashmap: FnvHashMap::default(),
             addr: addr.into(),
             rdy,
@@ -345,28 +355,9 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                 },
                 // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
                 Cmd::ResponseMsg(timestamp, attemps, id, body) => {
-                    if self.handler_ready > 0 {
-                        self.handler_ready -= 1
-                    };
-                    if let Some(handler) = self.handlers.get(self.handler_ready) {
-                        if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
-                            match rec.do_send(Msg {
-                                timestamp,
-                                attemps,
-                                id,
-                                body,
-                            }) {
-                                Ok(_s) => {
-                                    self.in_flight += 1;
-                                    self.info_in_flight(self.in_flight);
-                                }
-                                Err(e) => error!("sending msg to reader: {}", e),
-                            }
-                        }
-                    }
-                    if self.handler_ready == 0 {
-                        self.handler_ready = self.handlers.len()
-                    }
+                    self.msgs.push((timestamp, attemps, id, body));
+                    println!("send msgs");
+                    ctx.notify(SendMsg);
                 }
                 Cmd::ResponseError(s) => {
                     if self.state == ConnState::Closing {
@@ -441,6 +432,45 @@ impl Handler<TcpConnect> for Connection {
     }
 }
 
+impl Handler<SendMsg> for Connection {
+     type Result = ();
+     fn handle(&mut self, _msg: SendMsg, _ctx: &mut Self::Context) {
+        info!("handlers: {:?}", self.handlers);
+        info!("busy: {:?}", self.handlers_busy);
+        info!("msgs: {:?}", self.msgs);
+        let mut len = self.handlers.len();
+        info!("len: {}", len);
+        if len == 0 {
+            return;
+        }
+        let mut sent = false;
+        if let Some(handler) = self.handlers.get(len - 1) {
+            if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
+                if let Some((timestamp, attemps, id, body)) = self.msgs.pop() {
+                    let id_cloned = id.clone();
+                    let rec_cloned = rec.clone();
+                    let _ = rec.do_send(Msg {
+                        timestamp,
+                        attemps,
+                        id,
+                        body,
+                    });
+                    self.handlers_busy.insert(id_cloned, Box::new(rec_cloned));
+                    sent = true;
+                    if len > 0 {
+                        len -= 1;
+                    }
+                }
+                self.in_flight += 1;
+                self.info_in_flight(self.in_flight);
+            }
+        }
+        if sent {
+            let _ = self.handlers.pop();
+        }
+     }
+}
+
 impl Handler<Cls> for Connection {
     type Result = ();
     fn handle(&mut self, _msg: Cls, ctx: &mut Self::Context) {
@@ -453,16 +483,24 @@ impl Handler<Fin> for Connection {
     type Result = ();
     fn handle(&mut self, msg: Fin, ctx: &mut Self::Context) {
         // discard the in_flight messages
+        let id = msg.0.clone();
         if let Some(ref mut cell) = self.cell {
             cell.write(fin(&msg.0));
-            info!("Conn fin sent");
         }
+        if let Some(r) = self.handlers_busy.get(&id) {
+            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
+            self.handlers.push(Box::new(rec.clone()));
+            if self.msgs.len() > 0 {
+                ctx.notify(SendMsg);
+            }
+        }
+        self.handlers_busy.remove(&id);
+        self.in_flight -= 1;
+        self.info_in_flight(self.in_flight);
         if self.state == ConnState::Resume {
             ctx.notify(Ready(self.rdy));
             self.state = ConnState::Started;
         }
-        self.in_flight -= 1;
-        self.info_in_flight(self.in_flight);
     }
 }
 

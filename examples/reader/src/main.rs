@@ -25,12 +25,13 @@ extern crate nsq_client;
 extern crate actix;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use actix::prelude::*;
 
 use nsq_client::{Connection, Msg, Fin, Subscribe, Config, OnAuth};
 
-struct MyReader(pub Arc<Addr<Connection>>);
+struct MyReader(pub Arc<Addr<Connection>>, pub u64, pub String);
 
 
 impl Actor for MyReader {
@@ -44,12 +45,18 @@ impl Actor for MyReader {
 
 impl Handler<Msg> for MyReader {
     type Result = ();
-    fn handle(&mut self, msg: Msg, _ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Msg, ctx: &mut Self::Context) {
         println!("MyReader: {:?}", msg);
         if let Ok(body) = String::from_utf8(msg.body) {
             println!("utf8 msg: {}", body);
         }
-        self.0.do_send(Fin(msg.id));
+        let dur = Duration::new(self.1, 0);
+        let id = msg.id;
+        ctx.run_later(dur, |act, _ctx| {
+            println!("Reader: {}", act.2);
+            act.0.do_send(Fin(id));
+
+        });
     }
 }
 
@@ -72,9 +79,12 @@ fn main() {
             "0.0.0.0:4150", //nsqd tcp address
             Some(config), //config (Optional see mod config for defaults, if None Consumer sets defaults)
             None,// Some(secret), // secret for Auth (Optional)
-            Some(2), // rdy (optional if None set rdy to 1)
+            Some(3), // rdy (optional if None set rdy to 1)
     ));
     let conn = Arc::new(c);
-    let _ = MyReader(conn.clone()).start(); // same thread reader
+    let _ = MyReader(conn.clone(), 2, "1".to_owned()).start(); // same thread reader
+    let _ = MyReader(conn.clone(), 0, "2".to_owned()).start(); // same thread reader
+    let _ = MyReader(conn.clone(), 0, "3".to_owned()).start(); // same thread reader
+    let _ = MyReader(conn.clone(), 0, "4".to_owned()).start(); // same thread reader
     sys.run();
 }
