@@ -457,9 +457,6 @@ impl Handler<SendMsg> for Connection {
                     });
                     self.handlers_busy.insert(id_cloned, Box::new(rec_cloned));
                     sent = true;
-                    if len > 0 {
-                        len -= 1;
-                    }
                 }
                 self.in_flight += 1;
                 self.info_in_flight(self.in_flight);
