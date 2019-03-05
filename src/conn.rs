@@ -439,7 +439,7 @@ impl Handler<SendMsg> for Connection {
         info!("busy: {:?}", self.handlers_busy);
         info!("msgs: {:?}", self.msgs);
         let mut len = self.handlers.len();
-        info!("len: {}", len);
+        info!("handlers len: {}", len);
         if len == 0 {
             return;
         }
@@ -525,6 +525,7 @@ impl Handler<Ready> for Connection {
 impl Handler<Auth> for Connection {
     type Result = ();
     fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
+        info!("I'm on auth handler");
         if let Some(ref mut cell) = self.cell {
             cell.write(auth(self.secret.clone()));
         } else {
