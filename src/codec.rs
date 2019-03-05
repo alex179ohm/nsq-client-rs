@@ -222,7 +222,7 @@ impl Encoder for NsqCodec {
             Cmd::Msg(cmd, msg) => {
                 write_cmd(buf, cmd);
                 write_msg(buf, msg);
-                pritnln!("buf: {:?}", buf);
+                println!("buf: {:?}", buf);
                 Ok(())
             }
             Cmd::MMsg(cmd, msgs) => {
