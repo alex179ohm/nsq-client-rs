@@ -444,7 +444,7 @@ impl Handler<SendMsg> for Connection {
             return;
         }
         let mut sent = false;
-        if let Some(handler) = self.handlers.get(len - 1) {
+        while let Some(handler) = self.handlers.get(len - 1) {
             if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
                 if let Some((timestamp, attemps, id, body)) = self.msgs.pop() {
                     let id_cloned = id.clone();
