@@ -357,7 +357,6 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                 Cmd::ResponseMsg(timestamp, attemps, id, body) => {
                     self.msgs.push((timestamp, attemps, id, body));
                     println!("send msgs");
-                    ctx.notify(SendMsg);
                 }
                 Cmd::ResponseError(s) => {
                     if self.state == ConnState::Closing {
@@ -375,6 +374,7 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                 _ => {}
             }
         }
+        ctx.notify(SendMsg);
     }
 }
 
