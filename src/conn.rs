@@ -529,6 +529,7 @@ impl Handler<Auth> for Connection {
         if let Some(ref mut cell) = self.cell {
             println!("trying to write");
             cell.write(auth(self.secret.clone()));
+            println!("Writed!");
         } else {
             error!("unable to identify: connection dropped [{}]", self.addr);
             ctx.stop();
