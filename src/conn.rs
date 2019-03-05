@@ -527,6 +527,7 @@ impl Handler<Auth> for Connection {
     fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
         info!("I'm on auth handler");
         if let Some(ref mut cell) = self.cell {
+            println!("trying to write");
             cell.write(auth(self.secret.clone()));
         } else {
             error!("unable to identify: connection dropped [{}]", self.addr);
