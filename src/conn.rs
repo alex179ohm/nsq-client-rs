@@ -30,7 +30,6 @@ use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
 use futures::stream::once;
-use futures::Future;
 use log::{error, info};
 use serde_json;
 use tokio_codec::FramedRead;
@@ -438,7 +437,7 @@ impl Handler<SendMsg> for Connection {
         info!("handlers: {:?}", self.handlers);
         info!("busy: {:?}", self.handlers_busy);
         info!("msgs: {:?}", self.msgs);
-        let mut len = self.handlers.len();
+        let len = self.handlers.len();
         info!("handlers len: {}", len);
         if len == 0 {
             return;
@@ -487,7 +486,7 @@ impl Handler<Fin> for Connection {
         if let Some(r) = self.handlers_busy.get(&id) {
             let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
             self.handlers.push(Box::new(rec.clone()));
-            if self.msgs.len() > 0 {
+            if !self.msgs.is_empty() {
                 ctx.notify(SendMsg);
             }
         }
