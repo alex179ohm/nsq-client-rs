@@ -23,6 +23,7 @@
 
 use std::any::{Any, TypeId};
 use std::io;
+use std::time::Duration;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
@@ -381,7 +382,7 @@ impl Handler<TcpConnect> for Connection {
     type Result = ();
     fn handle(&mut self, msg: TcpConnect, ctx: &mut Self::Context) {
         Resolver::from_registry()
-            .send(Connect::host(msg.0.as_str()))
+            .send(Connect::host(msg.0.as_str()).timeout(Duration::new(5, 0)))
             .into_actor(self)
             .map(move |res, act, ctx| match res {
                 Ok(stream) => {
