@@ -215,14 +215,14 @@ impl Encoder for NsqCodec {
                 Ok(())
             }
             Cmd::Command(cmd) => {
-                println!("{:?}", cmd);
+                //println!("{:?}", cmd);
                 write_cmd(buf, cmd);
                 Ok(())
             }
             Cmd::Msg(cmd, msg) => {
                 write_cmd(buf, cmd);
                 write_msg(buf, msg);
-                println!("buf: {:?}", buf);
+                //println!("buf: {:?}", buf);
                 Ok(())
             }
             Cmd::MMsg(cmd, msgs) => {

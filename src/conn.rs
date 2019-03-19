@@ -31,7 +31,7 @@ use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
 use futures::stream::once;
-use log::{error, info};
+use log::{error, info, warn};
 use serde_json;
 use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
@@ -356,7 +356,7 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                 // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
                 Cmd::ResponseMsg(timestamp, attemps, id, body) => {
                     self.msgs.push((timestamp, attemps, id, body));
-                    println!("send msgs");
+                    //println!("send msgs");
                     ctx.notify(SendMsg);
                 }
                 Cmd::ResponseError(s) => {
@@ -365,7 +365,7 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                         self.info_on_close(false);
                         self.state = ConnState::Started;
                     }
-                    error!("failed: {}", s);
+                    warn!("failed: {}", s);
                 }
                 Cmd::Command(_) => {
                     if let Some(ref mut cell) = self.cell {
