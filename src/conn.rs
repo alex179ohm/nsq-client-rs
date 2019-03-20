@@ -25,7 +25,7 @@ use std::any::{Any, TypeId};
 use std::io;
 use std::time::Duration;
 use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
-use std::net::TcpStream as StdStream;
+//use std::net::TcpStream as StdStream;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
@@ -276,11 +276,11 @@ impl Actor for Connection {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         info!("trying to connect [{}]", self.addr);
-        let addrs = self.addr.to_socket_addrs().unwrap();
+        let mut addrs = self.addr.to_socket_addrs().unwrap();
         println!("addrs: {:?}", addrs);
-        let std_stream = StdStream::connect(&addrs.as_slice()[..]).unwrap();
+        //let std_stream = StdStream::connect(&addrs.as_slice()[..]).unwrap();
+        let stream = TcpStream::connect(&addrs.next().unwrap()).wait().unwrap();
         info!("connected [{}]", self.addr);
-        let stream = TcpStream::from_std(std_stream, &Handle::default()).unwrap();
         let (r, w) = stream.split();
 
         // configure write side of the connection
