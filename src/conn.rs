@@ -25,6 +25,7 @@ use std::any::{Any, TypeId};
 use std::io;
 use std::time::Duration;
 use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
+use std::net::TcpStream as StdStream;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
@@ -271,8 +272,13 @@ impl Actor for Connection {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         info!("trying to connect [{}]", self.addr);
-        let addrs = self.addr.to_socket_addrs();
+        let addrs = self.addr.to_socket_addrs().unwrap();
         println!("addrs: {:?}", addrs);
+        if let Ok(stream) = StdStream::connect(addrs.as_bytes()[..]) {
+            println!("Connected to the server");
+        } else {
+            panic!("Could not connect to the server");
+        }
         self.handler_ready = self.handlers.len();
         ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
     }
