@@ -25,6 +25,7 @@ use std::any::{Any, TypeId};
 use std::io;
 use std::time::Duration;
 use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
+use std::net::TcpStream as StdStream;
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
@@ -41,6 +42,7 @@ use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
 use tokio_io::AsyncRead;
 use tokio_tcp::TcpStream;
+use tokio::reactor::Handle;
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
@@ -276,37 +278,31 @@ impl Actor for Connection {
         info!("trying to connect [{}]", self.addr);
         let addrs = self.addr.to_socket_addrs().unwrap();
         println!("addrs: {:?}", addrs);
-        let res = TcpStream::connect(&addrs.as_slice()[0]).map(move |stream| {
+        let std_stream = StdStream::connect(&addrs.as_slice()[..]).unwrap();
+        info!("connected [{}]", self.addr);
+        let stream = TcpStream::from_std(std_stream, &Handle::default()).unwrap();
+        let (r, w) = stream.split();
 
-            info!("connected [{}]", self.addr);
-            let (r, w) = stream.split();
+        // configure write side of the connection
+        let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
+        let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
+        framed.write(Cmd::Magic(VERSION));
+        // send configuration to nsqd
+        let json = match serde_json::to_string(&self.config) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("config cannot be formatted as json string: {}", e);
+                return ctx.stop();
+            }
+        };
+        // read connection
+        ctx.add_stream(rx);
+        framed.write(identify(json));
+        self.cell = Some(framed);
 
-            // configure write side of the connection
-            let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
-            let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
-            framed.write(Cmd::Magic(VERSION));
-            // send configuration to nsqd
-            let json = match serde_json::to_string(&self.config) {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("config cannot be formatted as json string: {}", e);
-                    return ctx.stop();
-                }
-            };
-            // read connection
-            ctx.add_stream(rx);
-            framed.write(identify(json));
-            self.cell = Some(framed);
-
-            self.backoff.reset();
-            self.state = ConnState::Neg;
-            self.handler_ready = self.handlers.len();
-        }).map_err(|e| {
-            error!("can not connect [{}]", e);
-            // re-connect.
-            // we stop current context, supervisor will restart it.
-        })
-        .wait();
+        self.backoff.reset();
+        self.state = ConnState::Neg;
+        self.handler_ready = self.handlers.len();
         //ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
     }
 }
