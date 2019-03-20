@@ -32,7 +32,10 @@ use actix::prelude::*;
 use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
-use futures::stream::once;
+use futures::{
+    stream::once,
+    Future,
+};
 use log::{error, info, warn};
 use serde_json;
 use tokio_codec::FramedRead;
@@ -274,12 +277,8 @@ impl Actor for Connection {
         info!("trying to connect [{}]", self.addr);
         let addrs = self.addr.to_socket_addrs().unwrap();
         println!("addrs: {:?}", addrs);
-        if let Ok(stream) = StdStream::connect(&addrs.as_slice()[..]) {
-            println!("Connected to the server");
-        } else {
-            panic!("Could not connect to the server");
-        }
-        let stream = TcpStream::from_std(stream);
+        let stream = TcpStream::connect(&addrs.as_slice()[0]).wait().unwrap();
+        info!("connected [{}]", self.addr);
         let (r, w) = stream.split();
 
         // configure write side of the connection
@@ -287,7 +286,7 @@ impl Actor for Connection {
         let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
         framed.write(Cmd::Magic(VERSION));
         // send configuration to nsqd
-        let json = match serde_json::to_string(&act.config) {
+        let json = match serde_json::to_string(&self.config) {
             Ok(s) => s,
             Err(e) => {
                 error!("config cannot be formatted as json string: {}", e);
@@ -297,10 +296,10 @@ impl Actor for Connection {
         // read connection
         ctx.add_stream(rx);
         framed.write(identify(json));
-        act.cell = Some(framed);
+        self.cell = Some(framed);
 
-        act.backoff.reset();
-        act.state = ConnState::Neg;
+        self.backoff.reset();
+        self.state = ConnState::Neg;
         self.handler_ready = self.handlers.len();
         //ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
     }
