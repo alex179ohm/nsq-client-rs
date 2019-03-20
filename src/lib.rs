@@ -92,7 +92,7 @@ pub use config::Config;
 pub use conn::Connection;
 pub use error::Error;
 pub use msgs::{
-    Backoff, Fin, InFlight, Msg, OnAuth, OnBackoff, OnClose, OnIdentify, OnResume, Pub, Ready,
+    Backoff, Fin, Msg, OnAuth, OnBackoff, OnClose, OnIdentify, OnResume, Pub, Ready,
     Reqeue, Touch,
 };
 pub use producer::Producer;

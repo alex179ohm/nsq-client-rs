@@ -58,7 +58,7 @@ use crate::commands::{auth, fin, identify, nop, rdy, sub, VERSION};
 use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
-    AddHandler, Auth, Backoff, Cls, Fin, InFlight, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
+    AddHandler, Auth, Backoff, Cls, Fin, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
     OnIdentify, OnResume, Ready, Resume, Sub,
 };
 
@@ -115,7 +115,6 @@ pub struct Connection {
     cell: Option<actix::io::FramedWrite<WriteHalf<TcpStream>, NsqCodec>>,
     state: ConnState,
     rdy: u32,
-    in_flight: u32,
     handler_ready: usize,
 }
 
@@ -136,7 +135,6 @@ impl Default for Connection {
             state: ConnState::Neg,
             addr: String::new(),
             rdy: 1,
-            in_flight: 0,
             handler_ready: 0,
         }
     }
@@ -189,24 +187,12 @@ impl Connection {
             info_hashmap: FnvHashMap::default(),
             addr: addr.into(),
             rdy,
-            in_flight: 0,
             handler_ready: 0,
         }
     }
 }
 
 impl Connection {
-    fn info_in_flight(&self, n: u32) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<InFlight>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<InFlight>>() {
-                match handler.do_send(InFlight(n)) {
-                    Ok(_) => {}
-                    Err(e) => error!("sending InFlight: {}", e),
-                }
-            }
-        }
-    }
-
     fn info_on_auth(&self, resp: AuthResp) {
         if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
             if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
@@ -440,8 +426,6 @@ impl Handler<SendMsg> for Connection {
                     self.handlers_busy.insert(id_cloned, Box::new(rec_cloned));
                     sent = true;
                 }
-                self.in_flight += 1;
-                self.info_in_flight(self.in_flight);
             }
         }
         if sent {
@@ -474,8 +458,6 @@ impl Handler<Fin> for Connection {
             }
         }
         self.handlers_busy.remove(&id);
-        self.in_flight -= 1;
-        self.info_in_flight(self.in_flight);
         if self.state == ConnState::Resume {
             ctx.notify(Ready(self.rdy));
             self.state = ConnState::Started;
@@ -549,7 +531,6 @@ impl Handler<Backoff> for Connection {
                 error!("backoff failed: connection dropped [{}]", self.addr);
                 Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
             }
-            self.info_in_flight(0);
             self.info_on_backoff();
         }
     }
@@ -565,7 +546,6 @@ impl Handler<Resume> for Connection {
             error!("resume failed: connection dropped [{}]", self.addr);
             Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
         }
-        self.info_in_flight(1);
         self.info_on_resume();
     }
 }

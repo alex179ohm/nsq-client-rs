@@ -83,10 +83,6 @@ impl Default for Msg {
     }
 }
 
-/// Sent by [Connection](struct.Connection.html) every time in_fligth is increased or decreased
-#[derive(Message)]
-pub struct InFlight(pub u32);
-
 #[derive(Message)]
 pub struct Auth;
 
