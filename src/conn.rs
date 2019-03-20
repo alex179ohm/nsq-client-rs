@@ -274,7 +274,7 @@ impl Actor for Connection {
         info!("trying to connect [{}]", self.addr);
         let addrs = self.addr.to_socket_addrs().unwrap();
         println!("addrs: {:?}", addrs);
-        if let Ok(stream) = StdStream::connect(addrs.as_bytes()[..]) {
+        if let Ok(stream) = StdStream::connect(&addrs.as_slice()[..]) {
             println!("Connected to the server");
         } else {
             panic!("Could not connect to the server");
