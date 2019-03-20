@@ -74,7 +74,6 @@ extern crate serde_json;
 extern crate tokio_codec;
 extern crate tokio_io;
 extern crate tokio_tcp;
-extern crate trust_dns_resolver;
 
 mod auth;
 mod codec;

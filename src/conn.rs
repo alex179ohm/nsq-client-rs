@@ -24,7 +24,7 @@
 use std::any::{Any, TypeId};
 use std::io;
 use std::time::Duration;
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
 
 use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
@@ -38,15 +38,6 @@ use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
 use tokio_io::AsyncRead;
 use tokio_tcp::TcpStream;
-use trust_dns_resolver::{
-    system_conf,
-    config::{
-        ResolverConfig,
-        ResolverOpts,
-        NameServerConfigGroup,
-        LookupIpStrategy,
-    }
-};
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
@@ -280,6 +271,8 @@ impl Actor for Connection {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         info!("trying to connect [{}]", self.addr);
+        let addrs = self.addr.to_socket_addrs();
+        println!("addrs: {:?}", addrs);
         self.handler_ready = self.handlers.len();
         ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
     }
@@ -391,25 +384,9 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
 impl Handler<TcpConnect> for Connection {
     type Result = ();
     fn handle(&mut self, msg: TcpConnect, ctx: &mut Self::Context) {
-        let (dns_conf, _) = system_conf::read_system_conf().expect("failed to read system dns config");
-        let dns_black_list: Vec<IpAddr> = vec![
-            IpAddr::V6(Ipv6Addr::new(0xfec0, 0, 0, 0xffff, 0, 0 ,0, 1)),
-            IpAddr::V6(Ipv6Addr::new(0xfec0, 0, 0, 0xffff, 0, 0 ,0, 2)),
-            IpAddr::V6(Ipv6Addr::new(0xfec0, 0, 0, 0xffff, 0, 0 ,0, 3))
-        ];
-        let mut dns_addrs: Vec<IpAddr> = dns_conf.name_servers()
-            .into_iter()
-            .filter(|c| !dns_black_list.contains(&c.socket_addr.ip()))
-            .map(|c| c.socket_addr.ip()).collect::<Vec<IpAddr>>();
-        dns_addrs.dedup();
-        let dns_addrs_conf = NameServerConfigGroup::from_ips_clear(&dns_addrs, 53);
-        println!("{:?}", dns_addrs_conf);
-        let mut resolver_opts = ResolverOpts::default();
-        resolver_opts.ip_strategy = LookupIpStrategy::Ipv4Only;
-        let resolver_conf = ResolverConfig::from_parts(None, vec![], dns_addrs_conf);
-        let resolver = Resolver::new(resolver_conf, resolver_opts).start();
 
-        resolver.send(Connect::host(msg.0.as_str()).timeout(Duration::new(5, 0)))
+        Resolver::from_registry()
+            .send(Connect::host(msg.0.as_str()).timeout(Duration::new(5, 0)))
             .into_actor(self)
             .map(move |res, act, ctx| match res {
                 Ok(stream) => {
