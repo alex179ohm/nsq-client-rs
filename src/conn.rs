@@ -24,25 +24,33 @@
 use std::any::{Any, TypeId};
 use std::io;
 use std::time::Duration;
-use std::net::{IpAddr, Ipv6Addr, ToSocketAddrs};
-//use std::net::TcpStream as StdStream;
+use std::net::{
+    ToSocketAddrs,
+    SocketAddr};
+use std::vec::IntoIter;
 
-use actix::actors::resolver::{Connect, Resolver};
 use actix::prelude::*;
+use actix::clock;
 use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
 use futures::{
     stream::once,
     Future,
+    Async,
+    Poll,
 };
 use log::{error, info, warn};
 use serde_json;
 use tokio_codec::FramedRead;
 use tokio_io::io::WriteHalf;
 use tokio_io::AsyncRead;
-use tokio_tcp::TcpStream;
-use tokio::reactor::Handle;
+use tokio::net::{
+    tcp::ConnectFuture,
+    TcpStream,
+};
+use tokio::timer::Delay;
+//use tokio::reactor::Handle;
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
@@ -53,9 +61,6 @@ use crate::msgs::{
     AddHandler, Auth, Backoff, Cls, Fin, InFlight, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
     OnIdentify, OnResume, Ready, Resume, Sub,
 };
-
-#[derive(Message, Clone)]
-pub struct TcpConnect(pub String);
 
 #[derive(Message)]
 pub struct SendMsg;
@@ -276,34 +281,33 @@ impl Actor for Connection {
 
     fn started(&mut self, ctx: &mut Context<Self>) {
         info!("trying to connect [{}]", self.addr);
-        let mut addrs = self.addr.to_socket_addrs().unwrap();
-        println!("addrs: {:?}", addrs);
-        //let std_stream = StdStream::connect(&addrs.as_slice()[..]).unwrap();
-        let stream = TcpStream::connect(&addrs.next().unwrap()).wait().unwrap();
-        info!("connected [{}]", self.addr);
-        let (r, w) = stream.split();
+        let addrs = self.addr.to_socket_addrs().unwrap();
+        TcpConnector::new(addrs).map(|stream, act, ctx| {
+            info!("connected: {:?}", stream);
+            let (r, w) = stream.split();
+            let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
+            let rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
+            framed.write(Cmd::Magic(VERSION));
+            let json = match serde_json::to_string(&act.config) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("config cannot be formatted as json string: {}", e);
+                    return ctx.stop();
+                }
+            };
+            ctx.add_stream(rx);
+            framed.write(identify(json));
+            act.cell = Some(framed);
 
-        // configure write side of the connection
-        let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
-        let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
-        framed.write(Cmd::Magic(VERSION));
-        // send configuration to nsqd
-        let json = match serde_json::to_string(&self.config) {
-            Ok(s) => s,
-            Err(e) => {
-                error!("config cannot be formatted as json string: {}", e);
-                return ctx.stop();
+            act.backoff.reset();
+            act.state = ConnState::Neg;
+            act.handler_ready = act.handlers.len();
+        }).map_err(|e, act, ctx| {
+            error!("error connect [{}]: {}", act.addr, e);
+            if let Some(timeout) = act.tcp_backoff.next_backoff() {
+                ctx.run_later(timeout, |_, ctx| ctx.stop());
             }
-        };
-        // read connection
-        ctx.add_stream(rx);
-        framed.write(identify(json));
-        self.cell = Some(framed);
-
-        self.backoff.reset();
-        self.state = ConnState::Neg;
-        self.handler_ready = self.handlers.len();
-        //ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
+        }).wait(ctx);
     }
 }
 
@@ -407,61 +411,6 @@ impl StreamHandler<Vec<Cmd>, Error> for Connection {
                 _ => {}
             }
         }
-    }
-}
-
-impl Handler<TcpConnect> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: TcpConnect, ctx: &mut Self::Context) {
-
-        Resolver::from_registry()
-            .send(Connect::host(msg.0.as_str()).timeout(Duration::new(5, 0)))
-            .into_actor(self)
-            .map(move |res, act, ctx| match res {
-                Ok(stream) => {
-                    info!("connected [{}]", msg.0);
-                    //stream.set_recv_buffer_size(act.config.output_buffer_size as usize);
-
-                    let (r, w) = stream.split();
-
-                    // configure write side of the connection
-                    let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
-                    let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
-                    framed.write(Cmd::Magic(VERSION));
-                    // send configuration to nsqd
-                    let json = match serde_json::to_string(&act.config) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            error!("config cannot be formatted as json string: {}", e);
-                            return ctx.stop();
-                        }
-                    };
-                    // read connection
-                    ctx.add_stream(rx);
-                    framed.write(identify(json));
-                    act.cell = Some(framed);
-
-                    act.backoff.reset();
-                    act.state = ConnState::Neg;
-                }
-                Err(err) => {
-                    error!("can not connect [{}]", err);
-                    // re-connect with backoff time.
-                    // we stop current context, supervisor will restart it.
-                    if let Some(timeout) = act.tcp_backoff.next_backoff() {
-                        ctx.run_later(timeout, |_, ctx| ctx.stop());
-                    }
-                }
-            })
-            .map_err(|err, act, ctx| {
-                error!("can not connect [{}]", err);
-                // re-connect with backoff time.
-                // we stop current context, supervisor will restart it.
-                if let Some(timeout) = act.tcp_backoff.next_backoff() {
-                    ctx.run_later(timeout, |_, ctx| ctx.stop());
-                }
-            })
-            .wait(ctx);
     }
 }
 
@@ -639,6 +588,89 @@ impl Supervised for Connection {
     fn restarting(&mut self, ctx: &mut Self::Context) {
         if self.state == ConnState::Stopped {
             ctx.stop();
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ConnectionError {
+    Timeout,
+    IoError(io::Error),
+}
+
+impl std::error::Error for ConnectionError {
+    fn description(&self) -> &str {
+        match *self {
+            ConnectionError::Timeout => "tcp connection timeout",
+            ConnectionError::IoError(ref err) => err.description(),
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            ConnectionError::Timeout => None,
+            ConnectionError::IoError(ref err) => Some(err),
+        }
+    }
+}
+
+impl std::fmt::Display for ConnectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use std::error::Error;
+        std::fmt::Display::fmt(self.description(), f)
+    }
+}
+
+struct TcpConnector {
+    addrs: IntoIter<SocketAddr>,
+    timeout: Delay,
+    stream: Option<ConnectFuture>
+}
+
+impl TcpConnector {
+    pub fn new(addrs: IntoIter<SocketAddr>) -> TcpConnector {
+        TcpConnector::with_timeout(addrs, Duration::from_secs(2))
+    }
+
+    fn with_timeout(addrs: IntoIter<SocketAddr>, timeout: Duration) -> TcpConnector {
+        TcpConnector {
+            addrs,
+            stream: None,
+            timeout: Delay::new(clock::now() + timeout),
+        }
+    }
+}
+
+impl ActorFuture for TcpConnector {
+    type Item = TcpStream;
+    type Error = ConnectionError;
+    type Actor = Connection;
+
+    fn poll(
+        &mut self,
+        _: &mut Connection,
+        _: &mut Context<Connection>,
+    ) -> Poll<Self::Item, Self::Error> {
+        if let Ok(Async::Ready(_)) = self.timeout.poll() {
+            return Err(ConnectionError::Timeout);
+        }
+
+        // connect
+        loop {
+            if let Some(new) = self.stream.as_mut() {
+                match new.poll() {
+                    Ok(Async::Ready(sock)) => return Ok(Async::Ready(sock)),
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(err) => {
+                        if self.addrs.as_slice().is_empty() {
+                            return Err(ConnectionError::IoError(err));
+                        }
+                    }
+                }
+            }
+
+            let addr = self.addrs.next().unwrap();
+            self.stream = Some(TcpStream::connect(&addr));
         }
     }
 }
