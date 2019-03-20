@@ -279,8 +279,30 @@ impl Actor for Connection {
         } else {
             panic!("Could not connect to the server");
         }
+        let stream = TcpStream::from_std(stream);
+        let (r, w) = stream.split();
+
+        // configure write side of the connection
+        let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
+        let mut rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
+        framed.write(Cmd::Magic(VERSION));
+        // send configuration to nsqd
+        let json = match serde_json::to_string(&act.config) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("config cannot be formatted as json string: {}", e);
+                return ctx.stop();
+            }
+        };
+        // read connection
+        ctx.add_stream(rx);
+        framed.write(identify(json));
+        act.cell = Some(framed);
+
+        act.backoff.reset();
+        act.state = ConnState::Neg;
         self.handler_ready = self.handlers.len();
-        ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
+        //ctx.add_message_stream(once(Ok(TcpConnect(self.addr.to_owned()))));
     }
 }
 
