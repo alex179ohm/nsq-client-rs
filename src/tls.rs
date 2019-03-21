@@ -44,7 +44,7 @@ pub fn protocol(s: &str) -> Protocol {
         "tls1.0" => Protocol::Tlsv10,
         "tls1.1" => Protocol::Tlsv11,
         "tls1.2" => Protocol::Tlsv12,
-        _ => Protocol::Tlsv10,
+        _ => Protocol::Tlsv12,
     }
 }
 
