@@ -93,7 +93,7 @@ pub use conn::Connection;
 pub use error::Error;
 pub use msgs::{
     Backoff, Fin, Msg, OnAuth, OnBackoff, OnClose, OnIdentify, OnResume, Pub, Ready,
-    Reqeue, Touch,
+    Requeue, Touch,
 };
 pub use producer::Producer;
 pub use subscribe::Subscribe;

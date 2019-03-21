@@ -54,12 +54,12 @@ use tokio::timer::Delay;
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
-use crate::commands::{auth, fin, identify, nop, rdy, sub, VERSION};
+use crate::commands::{auth, fin, identify, nop, rdy, sub, req, VERSION};
 use crate::config::{Config, NsqdConfig};
 use crate::error::Error;
 use crate::msgs::{
     AddHandler, Auth, Backoff, Cls, Fin, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
-    OnIdentify, OnResume, Ready, Resume, Sub,
+    OnIdentify, OnResume, Ready, Resume, Sub, Requeue,
 };
 
 #[derive(Message)]
@@ -449,6 +449,33 @@ impl Handler<Fin> for Connection {
         let id = msg.0.clone();
         if let Some(ref mut cell) = self.cell {
             cell.write(fin(&msg.0));
+        }
+        if let Some(r) = self.handlers_busy.get(&id) {
+            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
+            self.handlers.push(Box::new(rec.clone()));
+            if !self.msgs.is_empty() {
+                ctx.notify(SendMsg);
+            }
+        }
+        self.handlers_busy.remove(&id);
+        if self.state == ConnState::Resume {
+            ctx.notify(Ready(self.rdy));
+            self.state = ConnState::Started;
+        }
+    }
+}
+
+impl Handler<Requeue> for Connection {
+    type Result = ();
+    fn handle(&mut self, msg: Requeue, ctx: &mut Self::Context) {
+        // discard the in_flight messages
+        let id = msg.0.clone();
+        if let Some(ref mut cell) = self.cell {
+            if msg.1 != 0 {
+                cell.write(req(&msg.0, Some(msg.1)));
+            } else {
+                cell.write(req(&msg.0, None));
+            }
         }
         if let Some(r) = self.handlers_busy.get(&id) {
             let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
