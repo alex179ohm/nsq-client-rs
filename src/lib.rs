@@ -85,11 +85,8 @@ mod error;
 mod msgs;
 mod producer;
 mod subscribe;
-<<<<<<< HEAD
 mod tls;
-=======
 mod tcp;
->>>>>>> master
 
 pub use config::Config;
 pub use conn::Connection;

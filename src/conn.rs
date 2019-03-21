@@ -34,17 +34,10 @@ use log::{error, info, warn};
 use serde_json;
 use tokio::codec::FramedRead;
 use tokio::io::{WriteHalf, AsyncRead};
-<<<<<<< HEAD
-//use tokio_io::AsyncRead;
 use tokio::net::{
-    tcp::ConnectFuture,
     TcpStream,
 };
 use tokio::timer::Delay;
-//use tokio::reactor::Handle;
-=======
-use tokio::net::TcpStream;
->>>>>>> master
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
