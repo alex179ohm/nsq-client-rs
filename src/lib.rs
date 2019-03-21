@@ -71,10 +71,8 @@ extern crate log;
 extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
-extern crate tokio_codec;
-extern crate tokio_io;
-extern crate tokio_tcp;
 extern crate tokio;
+extern crate native_tls;
 
 mod auth;
 mod codec;
@@ -87,6 +85,7 @@ mod error;
 mod msgs;
 mod producer;
 mod subscribe;
+mod tls;
 
 pub use config::Config;
 pub use conn::Connection;

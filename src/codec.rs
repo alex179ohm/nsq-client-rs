@@ -29,7 +29,7 @@ use std::str;
 
 use bytes::{Buf, BufMut, BytesMut};
 use log::{error, debug};
-use tokio_io::codec::{Decoder, Encoder};
+use tokio::codec::{Decoder, Encoder};
 
 use crate::error::Error;
 

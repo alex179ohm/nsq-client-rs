@@ -42,9 +42,9 @@ use futures::{
 };
 use log::{error, info, warn};
 use serde_json;
-use tokio_codec::FramedRead;
-use tokio_io::io::WriteHalf;
-use tokio_io::AsyncRead;
+use tokio::codec::FramedRead;
+use tokio::io::{WriteHalf, AsyncRead};
+//use tokio_io::AsyncRead;
 use tokio::net::{
     tcp::ConnectFuture,
     TcpStream,
