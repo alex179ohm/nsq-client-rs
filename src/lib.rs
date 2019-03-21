@@ -59,7 +59,7 @@
 //! }
 //! ```
 
-#![feature(associated_type_defaults)]
+#![feature(associated_type_defaults, type_alias_enum_variants)]
 extern crate actix;
 extern crate backoff;
 extern crate byteorder;
