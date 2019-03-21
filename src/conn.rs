@@ -42,9 +42,8 @@ use futures::{
 };
 use log::{error, info, warn};
 use serde_json;
-use tokio_codec::FramedRead;
-use tokio_io::io::WriteHalf;
-use tokio_io::AsyncRead;
+use tokio::codec::FramedRead;
+use tokio::io::{WriteHalf, AsyncRead};
 use tokio::net::{
     tcp::ConnectFuture,
     TcpStream,
@@ -600,7 +599,7 @@ impl Supervised for Connection {
 }
 
 #[derive(Debug)]
-enum ConnectionError {
+pub enum ConnectionError {
     Timeout,
     IoError(io::Error),
 }

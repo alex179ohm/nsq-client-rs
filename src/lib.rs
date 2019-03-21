@@ -71,9 +71,6 @@ extern crate log;
 extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
-extern crate tokio_codec;
-extern crate tokio_io;
-extern crate tokio_tcp;
 extern crate tokio;
 
 mod auth;

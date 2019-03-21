@@ -32,10 +32,9 @@ use futures::unsync::oneshot;
 use futures::Future;
 use log::{debug, error, info};
 use serde_json;
-use tokio_codec::FramedRead;
-use tokio_io::io::WriteHalf;
-use tokio_io::AsyncRead;
-use tokio_tcp::TcpStream;
+use tokio::codec::FramedRead;
+use tokio::io::{WriteHalf, AsyncRead};
+use tokio::net::tcp::TcpStream;
 //use bytes::BytesMut;
 
 use crate::codec::{Cmd, NsqCodec};
