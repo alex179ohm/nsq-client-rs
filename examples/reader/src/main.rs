@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use actix::prelude::*;
 
-use nsq_client::{Connection, Msg, Fin, Subscribe, Config, OnAuth};
+use nsq_client::{Connection, Msg, Fin, Requeue, Subscribe, Config, OnAuth};
 
 struct MyReader(pub Arc<Addr<Connection>>, pub u64, pub String);
 
@@ -50,13 +50,8 @@ impl Handler<Msg> for MyReader {
         if let Ok(body) = String::from_utf8(msg.body) {
             println!("utf8 msg: {}", body);
         }
-        let dur = Duration::new(self.1, 0);
         let id = msg.id;
-        ctx.run_later(dur, |act, _ctx| {
-            println!("Reader: {}", act.2);
-            act.0.do_send(Fin(id));
-
-        });
+        self.0.do_send(Fin(id));
     }
 }
 

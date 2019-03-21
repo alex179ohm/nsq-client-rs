@@ -435,14 +435,13 @@ impl Handler<Fin> for Connection {
         if let Some(ref mut cell) = self.cell {
             cell.write(fin(&msg.0));
         }
-        if let Some(r) = self.handlers_busy.get(&id) {
+        if let Some(r) = self.handlers_busy.remove(&id) {
             let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
             self.handlers.push(Box::new(rec.clone()));
             if !self.msgs.is_empty() {
                 ctx.notify(SendMsg);
             }
         }
-        self.handlers_busy.remove(&id);
         if self.state == ConnState::Resume {
             ctx.notify(Ready(self.rdy));
             self.state = ConnState::Started;
@@ -462,14 +461,13 @@ impl Handler<Requeue> for Connection {
                 cell.write(req(&msg.0, None));
             }
         }
-        if let Some(r) = self.handlers_busy.get(&id) {
+        if let Some(r) = self.handlers_busy.remove(&id) {
             let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
             self.handlers.push(Box::new(rec.clone()));
             if !self.msgs.is_empty() {
                 ctx.notify(SendMsg);
             }
         }
-        self.handlers_busy.remove(&id);
         if self.state == ConnState::Resume {
             ctx.notify(Ready(self.rdy));
             self.state = ConnState::Started;

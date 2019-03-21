@@ -160,9 +160,13 @@ impl Decoder for NsqCodec {
                     self.msgs.clear();
                     return Ok(Some(msgs));
                 }
+                let len = frame.len();
                 let mut cursor = Cursor::new(frame.clone());
+                if len < 4 {
+                    return Ok(None)
+                }
                 let size = cursor.get_i32_be() as usize;
-                if frame.len() < size + 4 {
+                if len < size + 4 {
                     // processing buffer too early
                     return Ok(None);
                 }
