@@ -23,33 +23,18 @@
 
 use std::any::{Any, TypeId};
 use std::io;
-use std::time::Duration;
-use std::net::{
-    ToSocketAddrs,
-    SocketAddr};
-use std::vec::IntoIter;
+use std::net::ToSocketAddrs;
 
 use actix::prelude::*;
-use actix::clock;
 use backoff::backoff::Backoff as TcpBackoff;
 use backoff::ExponentialBackoff;
 use fnv::FnvHashMap;
-use futures::{
-    stream::once,
-    Future,
-    Async,
-    Poll,
-};
+use futures::stream::once;
 use log::{error, info, warn};
 use serde_json;
 use tokio::codec::FramedRead;
 use tokio::io::{WriteHalf, AsyncRead};
-use tokio::net::{
-    tcp::ConnectFuture,
-    TcpStream,
-};
-use tokio::timer::Delay;
-//use tokio::reactor::Handle;
+use tokio::net::TcpStream;
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
@@ -60,6 +45,7 @@ use crate::msgs::{
     AddHandler, Auth, Backoff, Cls, Fin, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
     OnIdentify, OnResume, Ready, Resume, Sub, Requeue,
 };
+use crate::tcp::TcpConnector;
 
 #[derive(Message)]
 pub struct SendMsg;
@@ -624,59 +610,5 @@ impl std::fmt::Display for ConnectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use std::error::Error;
         std::fmt::Display::fmt(self.description(), f)
-    }
-}
-
-struct TcpConnector {
-    addrs: IntoIter<SocketAddr>,
-    timeout: Delay,
-    stream: Option<ConnectFuture>
-}
-
-impl TcpConnector {
-    pub fn new(addrs: IntoIter<SocketAddr>) -> TcpConnector {
-        TcpConnector::with_timeout(addrs, Duration::from_secs(2))
-    }
-
-    fn with_timeout(addrs: IntoIter<SocketAddr>, timeout: Duration) -> TcpConnector {
-        TcpConnector {
-            addrs,
-            stream: None,
-            timeout: Delay::new(clock::now() + timeout),
-        }
-    }
-}
-
-impl ActorFuture for TcpConnector {
-    type Item = TcpStream;
-    type Error = ConnectionError;
-    type Actor = Connection;
-
-    fn poll(
-        &mut self,
-        _: &mut Connection,
-        _: &mut Context<Connection>,
-    ) -> Poll<Self::Item, Self::Error> {
-        if let Ok(Async::Ready(_)) = self.timeout.poll() {
-            return Err(ConnectionError::Timeout);
-        }
-
-        // connect
-        loop {
-            if let Some(new) = self.stream.as_mut() {
-                match new.poll() {
-                    Ok(Async::Ready(sock)) => return Ok(Async::Ready(sock)),
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(err) => {
-                        if self.addrs.as_slice().is_empty() {
-                            return Err(ConnectionError::IoError(err));
-                        }
-                    }
-                }
-            }
-
-            let addr = self.addrs.next().unwrap();
-            self.stream = Some(TcpStream::connect(&addr));
-        }
     }
 }

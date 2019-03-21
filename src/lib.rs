@@ -84,6 +84,7 @@ mod error;
 mod msgs;
 mod producer;
 mod subscribe;
+mod tcp;
 
 pub use config::Config;
 pub use conn::Connection;
