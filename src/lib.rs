@@ -85,14 +85,18 @@ mod error;
 mod msgs;
 mod producer;
 mod subscribe;
+<<<<<<< HEAD
 mod tls;
+=======
+mod tcp;
+>>>>>>> master
 
 pub use config::Config;
 pub use conn::Connection;
 pub use error::Error;
 pub use msgs::{
     Backoff, Fin, Msg, OnAuth, OnBackoff, OnClose, OnIdentify, OnResume, Pub, Ready,
-    Reqeue, Touch,
+    Requeue, Touch,
 };
 pub use producer::Producer;
 pub use subscribe::Subscribe;

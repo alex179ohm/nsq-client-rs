@@ -217,7 +217,7 @@ pub struct Fin(pub String);
 /// }
 /// ```
 #[derive(Message, Clone)]
-pub struct Reqeue(pub String, u32);
+pub struct Requeue(pub String, pub u32);
 
 /// Send TOUCH command to nsqd (reset timeout for and in-flight message)
 ///
