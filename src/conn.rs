@@ -34,10 +34,7 @@ use log::{error, info, warn};
 use serde_json;
 use tokio::codec::FramedRead;
 use tokio::io::{WriteHalf, AsyncRead};
-use tokio::net::{
-    TcpStream,
-};
-use tokio::timer::Delay;
+use tokio::net::TcpStream;
 
 use crate::auth::AuthResp;
 use crate::codec::{Cmd, NsqCodec};
