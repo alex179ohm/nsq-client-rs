@@ -198,8 +198,8 @@ impl Client {
 
     #[cfg(not(feature = "async"))]
     pub fn spawn<C: Consumer>(&mut self, n_threads: usize, reader: C) {
-        let mut boxed = Box::new(reader);
         for _i in 0..n_threads {
+            let mut boxed = Box::new(reader);
             let cmd = self.cmd_channel.0.clone();
             let msg = self.msg_channel.1.clone();
             let sentinel = self.sentinel.0.clone();
