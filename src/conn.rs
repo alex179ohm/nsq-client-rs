@@ -381,10 +381,10 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
             process::exit(1);
         }
     };
-    info!(addrs);
+    info!("{}", addrs);
     loop {
         info!("trying to connect to nsqd server");
-        if let Some(addr) = addrs[0] {
+        if let Some(addr) = addrs.next() {
             match TcpStream::connect(&addr) {
                 Ok(stream) => {
                     if let Err(e) = stream.peer_addr() {
