@@ -384,8 +384,8 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
     info!("{:?}", addrs);
     loop {
         info!("trying to connect to nsqd server");
-        let addr = addrs.next();
-        info!("{:?}", addr);
+        let _addr = addrs.next();
+        info!("{:?}", _addr);
         if let Some(addr) = addrs.next() {
             match TcpStream::connect(&addr) {
                 Ok(stream) => {
