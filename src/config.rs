@@ -1,27 +1,6 @@
-// MIT License
-//
-// Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
-// Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-use serde_derive::{Deserialize, Serialize};
+use log::error;
+use serde::{Deserialize, Serialize};
+use std::process;
 
 /// Configuration sent to nsqd to properly config the [Connection](struct.Connection.html)
 ///
@@ -91,7 +70,7 @@ pub struct Config {
     /// Enable TLS negotiation
     ///
     /// Default: **false** (Not implemented)
-    pub tls_v1: bool,
+    tls_v1: bool,
 
     /// Enable snappy compression.
     ///
@@ -101,14 +80,14 @@ pub struct Config {
     /// Enable deflate compression.
     ///
     /// Default: **false** (Not implemented)
-    pub deflate: bool,
+    deflate: bool,
     /// Configure deflate compression level.
     ///
     /// Valid range:
     /// * 1 <= deflate_level <= configured_max
     ///
     /// Default: **6**
-    pub deflate_level: u16,
+    deflate_level: u16,
 
     /// Integer percentage to sample the channel.
     ///
@@ -139,6 +118,7 @@ impl Default for Config {
             deflate_level: 6,
             snappy: false,
             feature_negotiation: true,
+            //heartbeat_interval: 2000,
             heartbeat_interval: 30000,
             message_timeout: 0,
             output_buffer_size: 16384,
@@ -149,7 +129,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct NsqdConfig {
     pub max_rdy_count: u32,
     pub version: String,
@@ -223,5 +203,25 @@ impl Config {
     pub fn user_agent<S: Into<String>>(mut self, user_agent: S) -> Self {
         self.user_agent = user_agent.into();
         self
+    }
+
+    pub fn tls(&mut self) {
+        if cfg!(feature = "tls") {
+            self.tls_v1 = true;
+        } else {
+            error!("cannot enable tls without tls feature enabled");
+            error!("you must include tls feature or remove \"default-futures = false\"");
+            process::exit(1);
+        }
+    }
+
+    pub fn deflate(&mut self, level: u16) {
+        if cfg!(feature = "deflate") {
+            self.deflate = true;
+            self.deflate_level = level;
+        } else {
+            error!("cannot enable deflate, deflate is not supported");
+            process::exit(1);
+        }
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "producer"
+name = "consumer"
 version = "0.1.0"
 authors = ["alex179ohm <alex179ohm@gmail.com>"]
 edition = "2018"

@@ -1,612 +1,425 @@
-// MIT License
-//
-// Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
-// Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-use std::any::{Any, TypeId};
-use std::io;
-use std::net::ToSocketAddrs;
-
-use actix::prelude::*;
-use backoff::backoff::Backoff as TcpBackoff;
-use backoff::ExponentialBackoff;
-use fnv::FnvHashMap;
-use futures::stream::once;
-use log::{error, info, warn};
-use serde_json;
-use tokio::codec::FramedRead;
-use tokio::io::{WriteHalf, AsyncRead};
-use tokio::net::TcpStream;
-
-use crate::auth::AuthResp;
-use crate::codec::{Cmd, NsqCodec};
-use crate::commands::{auth, fin, identify, nop, rdy, sub, req, VERSION};
-use crate::config::{Config, NsqdConfig};
-use crate::error::Error;
-use crate::msgs::{
-    AddHandler, Auth, Backoff, Cls, Fin, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
-    OnIdentify, OnResume, Ready, Resume, Sub, Requeue,
+use crate::codec::{
+    write_cmd, write_magic, write_mmsg, write_msg, Response, FRAME_TYPE_ERROR,
+    FRAME_TYPE_MESSAGE, FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
-use crate::tcp::TcpConnector;
-
-#[derive(Message)]
-pub struct SendMsg;
-
-#[derive(Debug, PartialEq)]
-pub enum ConnState {
-    Neg,
-    Auth,
-    Sub,
-    Ready,
-    Started,
-    Backoff,
-    Resume,
-    Closing,
-    Stopped,
-}
-
-/// Tcp Connection to NSQ system.
-///
-/// Tries to connect to nsqd early as started:
-///
-/// # Examples
-/// ```no-run
-/// use actix::prelude::*;
-/// use nsq_client::Connection;
-///
-/// fn main() {
-///     let sys = System::new("consumer");
-///     Supervisor::start(|_| Connection::new(
-///         "test", // <- topic
-///         "test", // <- channel
-///         "0.0.0.0:4150", // <- nsqd tcp address
-///         None, // <- config (Optional)
-///         None, // <- secret used by Auth (Optional)
-///         Some(1) // <- Initial RDY setting for the Connection
-///     ));
-///     sys.run();
-/// }
-/// ```
-pub struct Connection {
-    msgs: Vec<(i64, u16, String, Vec<u8>)>,
-    addr: String,
-    handlers: Vec<Box<Any>>,
-    handlers_busy: FnvHashMap<String, Box<Any>>,
-    info_hashmap: FnvHashMap<TypeId, Box<Any>>,
-    topic: String,
-    channel: String,
-    config: Config,
-    secret: String,
-    tcp_backoff: ExponentialBackoff,
-    backoff: ExponentialBackoff,
-    cell: Option<actix::io::FramedWrite<WriteHalf<TcpStream>, NsqCodec>>,
-    state: ConnState,
-    rdy: u32,
-    handler_ready: usize,
-}
-
-impl Default for Connection {
-    fn default() -> Connection {
-        Connection {
-            msgs: Vec::new(),
-            handlers: Vec::new(),
-            handlers_busy: FnvHashMap::default(),
-            info_hashmap: FnvHashMap::default(),
-            topic: String::new(),
-            channel: String::new(),
-            config: Config::default(),
-            secret: String::new(),
-            tcp_backoff: ExponentialBackoff::default(),
-            backoff: ExponentialBackoff::default(),
-            cell: None,
-            state: ConnState::Neg,
-            addr: String::new(),
-            rdy: 1,
-            handler_ready: 0,
-        }
-    }
-}
-
-impl Connection {
-    /// Return a Tcp Connection to nsqd.
-    ///
-    /// * `topic`    - Topic String
-    /// * `channel`  - Channel String
-    /// * `addr`     - Tcp address of nsqd
-    /// * `config`   - Optional [`Config`]
-    /// * `secret`   - Optional String used to autenticate to nsqd
-    /// * `rdy`      - Optional initial RDY setting
-    pub fn new<S: Into<String>>(
-        topic: S,
-        channel: S,
-        addr: S,
-        config: Option<Config>,
-        secret: Option<String>,
-        rdy: Option<u32>,
-    ) -> Connection {
-        let mut tcp_backoff = ExponentialBackoff::default();
-        let backoff = ExponentialBackoff::default();
-        let cfg = match config {
-            Some(cfg) => cfg,
-            None => Config::default(),
-        };
-        let mut scrt = String::new();
-        if let Some(sec) = secret {
-            scrt = sec;
-        }
-        let rdy = match rdy {
-            Some(r) => r,
-            None => 1,
-        };
-        tcp_backoff.max_elapsed_time = None;
-        Connection {
-            msgs: Vec::new(),
-            config: cfg,
-            secret: scrt,
-            tcp_backoff,
-            backoff,
-            cell: None,
-            topic: topic.into(),
-            channel: channel.into(),
-            state: ConnState::Neg,
-            handlers: Vec::new(),
-            handlers_busy: FnvHashMap::default(),
-            info_hashmap: FnvHashMap::default(),
-            addr: addr.into(),
-            rdy,
-            handler_ready: 0,
-        }
-    }
-}
-
-impl Connection {
-    fn info_on_auth(&self, resp: AuthResp) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
-                match handler.do_send(OnAuth(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnAuth: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_identify(&self, resp: NsqdConfig) {
-        if let Some(box_handler) = self
-            .info_hashmap
-            .get(&TypeId::of::<Recipient<OnIdentify>>())
-        {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnIdentify>>() {
-                match handler.do_send(OnIdentify(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnIdentify: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_close(&self, resp: bool) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnClose>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnClose>>() {
-                match handler.do_send(OnClose(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnClose: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_backoff(&self) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnBackoff>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnBackoff>>() {
-                match handler.do_send(OnBackoff) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnBackoff: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_resume(&self) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnResume>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnResume>>() {
-                match handler.do_send(OnResume) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnBackoff: {}", e);
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl Actor for Connection {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Context<Self>) {
-        info!("trying to connect [{}]", self.addr);
-        let addrs = self.addr.to_socket_addrs().unwrap();
-        TcpConnector::new(addrs).map(|stream, act, ctx| {
-            info!("connected: {:?}", stream);
-            let (r, w) = stream.split();
-            let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
-            let rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
-            framed.write(Cmd::Magic(VERSION));
-            let json = match serde_json::to_string(&act.config) {
-                Ok(s) => s,
-                Err(e) => {
-                    error!("config cannot be formatted as json string: {}", e);
-                    return ctx.stop();
-                }
-            };
-            ctx.add_stream(rx);
-            framed.write(identify(json));
-            act.cell = Some(framed);
-
-            act.backoff.reset();
-            act.state = ConnState::Neg;
-            act.handler_ready = act.handlers.len();
-        }).map_err(|e, act, ctx| {
-            error!("error connect [{}]: {}", act.addr, e);
-            if let Some(timeout) = act.tcp_backoff.next_backoff() {
-                ctx.run_later(timeout, |_, ctx| ctx.stop());
-            }
-        }).wait(ctx);
-    }
-}
-
-impl actix::io::WriteHandler<io::Error> for Connection {
-    fn error(&mut self, err: io::Error, _: &mut Self::Context) -> Running {
-        error!("Nsqd connection dropped: {}", err);
-        Running::Stop
-    }
-}
-
-// TODO: implement error
-impl StreamHandler<Vec<Cmd>, Error> for Connection {
-    fn finished(&mut self, ctx: &mut Self::Context) {
-        error!("Nsqd connection dropped");
-        ctx.stop();
-    }
-
-    fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
-        error!("Something goes wrong decoding message: {}", err);
-        Running::Stop
-    }
-
-    fn handle(&mut self, msgs: Vec<Cmd>, ctx: &mut Self::Context) {
-        info!("msg: {:?}", msgs);
-        for msg in msgs {
-            match msg {
-                Cmd::Heartbeat => {
-                    if let Some(ref mut cell) = self.cell {
-                        cell.write(nop());
-                    } else {
-                        error!("Nsqd connection dropped. trying reconnecting");
-                        ctx.stop();
-                    }
-                }
-                Cmd::Response(s) => match self.state {
-                    ConnState::Neg => {
-                        info!("trying negotiation [{}]", self.addr);
-                        let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => s,
-                            Err(err) => {
-                                error!("Negotiating json response invalid: {:?}", err);
-                                return ctx.stop();
-                            }
-                        };
-                        info!("configuration [{}] {:#?}", self.addr, config);
-                        self.info_on_identify(config.clone());
-                        if config.auth_required {
-                            info!("trying authentication [{}]", self.addr);
-                            ctx.notify(Auth);
-                        } else {
-                            info!(
-                                "subscribing [{}] topic: {} channel: {}",
-                                self.addr, self.topic, self.channel
-                            );
-                            ctx.notify(Sub);
-                        }
-                    }
-                    ConnState::Auth => {
-                        let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => s,
-                            Err(err) => {
-                                error!("Auth json response invalid: {:?}", err);
-                                return ctx.stop();
-                            }
-                        };
-                        info!("authenticated [{}] {:#?}", self.addr, auth_resp);
-                        self.info_on_auth(auth_resp);
-                        ctx.notify(Sub);
-                    }
-                    ConnState::Sub => {
-                        ctx.notify(Sub);
-                    }
-                    ConnState::Ready => {
-                        ctx.notify(Ready(self.rdy));
-                    }
-                    ConnState::Closing => {
-                        self.info_on_close(true);
-                        self.state = ConnState::Stopped;
-                    }
-                    _ => {}
-                },
-                // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
-                Cmd::ResponseMsg(timestamp, attemps, id, body) => {
-                    self.msgs.push((timestamp, attemps, id, body));
-                    //println!("send msgs");
-                    ctx.notify(SendMsg);
-                }
-                Cmd::ResponseError(s) => {
-                    if self.state == ConnState::Closing {
-                        error!("Closing connection: {}", s);
-                        self.info_on_close(false);
-                        self.state = ConnState::Started;
-                    }
-                    warn!("failed: {}", s);
-                }
-                Cmd::Command(_) => {
-                    if let Some(ref mut cell) = self.cell {
-                        cell.write(rdy(1));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl Handler<SendMsg> for Connection {
-     type Result = ();
-     fn handle(&mut self, _msg: SendMsg, _ctx: &mut Self::Context) {
-        info!("handlers: {:?}", self.handlers);
-        info!("busy: {:?}", self.handlers_busy);
-        info!("msgs: {:?}", self.msgs);
-        let len = self.handlers.len();
-        info!("handlers len: {}", len);
-        if len == 0 {
-            return;
-        }
-        let mut sent = false;
-        if let Some(handler) = self.handlers.get(len - 1) {
-            if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
-                if let Some((timestamp, attemps, id, body)) = self.msgs.pop() {
-                    let id_cloned = id.clone();
-                    let rec_cloned = rec.clone();
-                    let _ = rec.do_send(Msg {
-                        timestamp,
-                        attemps,
-                        id,
-                        body,
-                    });
-                    self.handlers_busy.insert(id_cloned, Box::new(rec_cloned));
-                    sent = true;
-                }
-            }
-        }
-        if sent {
-            let _ = self.handlers.pop();
-        }
-     }
-}
-
-impl Handler<Cls> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Cls, ctx: &mut Self::Context) {
-        self.state = ConnState::Closing;
-        ctx.stop();
-    }
-}
-
-impl Handler<Fin> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: Fin, ctx: &mut Self::Context) {
-        // discard the in_flight messages
-        let id = msg.0.clone();
-        if let Some(ref mut cell) = self.cell {
-            cell.write(fin(&msg.0));
-        }
-        if let Some(r) = self.handlers_busy.remove(&id) {
-            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
-            self.handlers.push(Box::new(rec.clone()));
-            if !self.msgs.is_empty() {
-                ctx.notify(SendMsg);
-            }
-        }
-        if self.state == ConnState::Resume {
-            ctx.notify(Ready(self.rdy));
-            self.state = ConnState::Started;
-        }
-    }
-}
-
-impl Handler<Requeue> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: Requeue, ctx: &mut Self::Context) {
-        // discard the in_flight messages
-        let id = msg.0.clone();
-        if let Some(ref mut cell) = self.cell {
-            if msg.1 != 0 {
-                cell.write(req(&msg.0, Some(msg.1)));
-            } else {
-                cell.write(req(&msg.0, None));
-            }
-        }
-        if let Some(r) = self.handlers_busy.remove(&id) {
-            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
-            self.handlers.push(Box::new(rec.clone()));
-            if !self.msgs.is_empty() {
-                ctx.notify(SendMsg);
-            }
-        }
-        if self.state == ConnState::Resume {
-            ctx.notify(Ready(self.rdy));
-            self.state = ConnState::Started;
-        }
-    }
-}
-
-impl Handler<Ready> for Connection {
-    type Result = ();
-
-    fn handle(&mut self, msg: Ready, _ctx: &mut Self::Context) {
-        if self.state != ConnState::Ready {
-            self.rdy = msg.0;
-            return;
-        }
-        if let Some(ref mut cell) = self.cell {
-            cell.write(rdy(msg.0));
-        }
-        if self.state == ConnState::Started {
-            self.rdy = msg.0;
-            info!("rdy updated [{}]", self.addr);
-        } else {
-            self.state = ConnState::Started;
-            info!("Ready to go [{}] RDY: {}", self.addr, msg.0);
-        }
-    }
-}
-
-impl Handler<Auth> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
-        info!("I'm on auth handler");
-        if let Some(ref mut cell) = self.cell {
-            println!("trying to write");
-            cell.write(auth(self.secret.clone()));
-            println!("Writed!");
-        } else {
-            error!("unable to identify: connection dropped [{}]", self.addr);
-            ctx.stop();
-        }
-        self.state = ConnState::Auth;
-    }
-}
-
-impl Handler<Sub> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Sub, ctx: &mut Self::Context) {
-        if let Some(ref mut cell) = self.cell {
-            cell.write(sub(&self.topic, &self.channel));
-        } else {
-            error!("unable to subscribing: connection dropped [{}]", self.addr);
-            ctx.stop();
-        }
-        self.state = ConnState::Ready;
-        info!(
-            "subscribed [{}] topic: {} channel: {}",
-            self.addr, self.topic, self.channel
-        );
-    }
-}
-
-impl Handler<Backoff> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Backoff, ctx: &mut Self::Context) {
-        if let Some(timeout) = self.backoff.next_backoff() {
-            if let Some(ref mut cell) = self.cell {
-                cell.write(rdy(0));
-                ctx.run_later(timeout, |_, ctx| ctx.notify(Resume));
-                self.state = ConnState::Backoff;
-            } else {
-                error!("backoff failed: connection dropped [{}]", self.addr);
-                Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
-            }
-            self.info_on_backoff();
-        }
-    }
-}
-
-impl Handler<Resume> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Resume, ctx: &mut Self::Context) {
-        if let Some(ref mut cell) = self.cell {
-            cell.write(rdy(1));
-            self.state = ConnState::Resume;
-        } else {
-            error!("resume failed: connection dropped [{}]", self.addr);
-            Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
-        }
-        self.info_on_resume();
-    }
-}
-
-impl<M: NsqMsg> Handler<AddHandler<M>> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: AddHandler<M>, _: &mut Self::Context) {
-        let msg_id = TypeId::of::<Recipient<M>>();
-        if msg_id == TypeId::of::<Recipient<Msg>>() {
-            self.handlers.push(Box::new(msg.0));
-            info!("Reader added");
-        } else {
-            self.info_hashmap.insert(msg_id, Box::new(msg.0));
-            info!("info handler added");
-        }
-    }
-}
-
-impl Supervised for Connection {
-    fn restarting(&mut self, ctx: &mut Self::Context) {
-        if self.state == ConnState::Stopped {
-            ctx.stop();
-        }
-    }
-}
+use crate::config::Config;
+use crate::msgs::{Cmd, Identify, NsqCmd, VERSION};
+#[cfg(feature = "tls")]
+use crate::tls::TlsSession;
+use backoff::{backoff::Backoff, ExponentialBackoff};
+use byteorder::{BigEndian, ByteOrder};
+use bytes::BytesMut;
+use crossbeam::channel::{Receiver, Sender};
+use log::{debug, error, info};
+use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
+#[cfg(feature = "tls")]
+use rustls::Session;
+use std::io::{self, Read, Write};
+use std::net::ToSocketAddrs;
+use std::process;
+use std::thread;
 
 #[derive(Debug)]
-pub enum ConnectionError {
-    Timeout,
-    IoError(io::Error),
+pub struct Conn {
+    //the addr of the nsqd.
+    addr: String,
+    //writing buffer where commands are written.
+    w_buf: BytesMut,
+    //read buffer where data is decoded.
+    r_buf: BytesMut,
+    //send message to readers.
+    //s: Sender<Msg>,
+    s: Sender<BytesMut>,
+    // tcp_stream
+    socket: TcpStream,
+    //receive Cmd from readers.
+    r: Receiver<Cmd>,
+    //heartbeat
+    pub heartbeat: bool,
+    //responses
+    pub responses: Vec<Response>,
+    //config
+    config: Config,
+    //msgs in flight
+    in_flight: u32,
+    //tls_session
+    #[cfg(feature = "tls")]
+    tls_sess: TlsSession,
+    //tls connection enabled/disabled (needed because we not start chatting on encrypted connection)
+    #[cfg(feature = "tls")]
+    tls: bool,
+    now: std::time::Instant,
+    processed: u32,
 }
 
-impl std::error::Error for ConnectionError {
-    fn description(&self) -> &str {
-        match *self {
-            ConnectionError::Timeout => "tcp connection timeout",
-            ConnectionError::IoError(ref err) => err.description(),
+impl Conn {
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(not(feature = "tls"))]
+    pub fn new(addr: String, config: Config, r: Receiver<Cmd>, s: Sender<Msg>) -> Conn {
+        let socket = connect(addr.as_str());
+        Conn {
+            addr,
+            socket,
+            r_buf: BytesMut::new(),
+            w_buf: BytesMut::new(),
+            r,
+            s,
+            heartbeat: false,
+            config,
+            responses: Vec::new(),
+            in_flight: 0,
+            now: std::time::Instant::now(),
+            processed: 0,
         }
     }
 
-    fn cause(&self) -> Option<&std::error::Error> {
-        match *self {
-            ConnectionError::Timeout => None,
-            ConnectionError::IoError(ref err) => Some(err),
+    #[cfg(feature = "tls")]
+    pub fn new(
+        addr: String,
+        config: Config,
+        r: Receiver<Cmd>,
+//        s: Sender<Msg>,
+        s: Sender<BytesMut>,
+        hostname: &str,
+        verify_server_cert: bool,
+    ) -> Conn {
+        let socket = connect(addr.as_str(), config.output_buffer_size as usize);
+        Conn {
+            addr,
+            socket,
+            r_buf: BytesMut::new(),
+            w_buf: BytesMut::new(),
+            r,
+            s,
+            heartbeat: false,
+            config,
+            responses: Vec::new(),
+            tls_sess: TlsSession::new(hostname, verify_server_cert),
+            tls: false,
+            in_flight: 0,
+            now: std::time::Instant::now(),
+            processed: 0,
+        }
+    }
+    //lookup for address and connect to nsqd server.
+
+    pub fn start(&mut self) {
+        write_magic(&mut self.w_buf, VERSION);
+        let _ = self.write();
+        let config = serde_json::to_string(&self.config).unwrap();
+        self.write_cmd(Identify(config).as_cmd());
+        let _ = self.write();
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn tls_enabled(&mut self) {
+        self.tls = true;
+        debug!("tls enabled");
+        let _ = self.tls_sess.0.complete_io(&mut self.socket);
+        if self.tls_sess.0.wants_write() {
+            let _ = self.write_tls();
+        }
+        if self.tls_sess.0.wants_read() {
+            let _ = self.read_tls();
+        }
+    }
+
+    pub fn register(&mut self, poll: &mut Poll, token: Token) {
+        poll.register(&self.socket, token, Ready::all(), PollOpt::edge())
+            .expect("cannot register socket on poll");
+    }
+
+    pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
+        self.poll_response();
+        //if self.tls {
+        //    info!("get resonse tls");
+        //    if let Some(r) = self.responses.pop() {
+        //        get_response(r, on_err.clone());
+        //    }
+        //    return Ok("Ok".to_owned());
+        //}
+        get_response(self.responses.pop().unwrap(), on_err)
+    }
+
+    pub fn poll_response(&mut self) {
+        loop {
+            let res = self.read();
+            match res {
+                Ok(0) => {
+                    continue;
+                }
+                Ok(n) => {
+                    info!("read n bytes: {}", n);
+                    //self.decode(n);
+                    if !self.responses.is_empty() {
+                        info!("response read");
+                        return;
+                    } else {
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn heartbeat_done(&mut self) {
+        self.heartbeat = false;
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn read(&mut self) -> io::Result<usize> {
+        if self.tls {
+            self.read_tls()
+        } else {
+            self.read_tcp()
+        }
+    }
+
+    #[cfg(not(feature = "tls"))]
+    pub fn read(&mut self) -> io::Result<usize> {
+        self.read_tcp()
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn write(&mut self) -> io::Result<usize> {
+        if self.tls {
+            self.write_tls()
+        } else {
+            self.write_tcp()
+        }
+    }
+
+    #[cfg(not(feature = "tls"))]
+    pub fn write(&mut self) -> io::Result<usize> {
+        self.write_tcp()
+    }
+
+    pub fn write_messages(&mut self) {
+        let msgs: Vec<Cmd> = self.r.try_iter().collect();
+        for msg in msgs {
+            self.write_cmd(msg);
+            let _ = self.write();
+            self.in_flight -= 1;
+            self.processed += 1;
+        }
+        info!("processed {}", self.processed);
+        if self.processed == 2000 {
+            info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
+            std::process::exit(0);
+        }
+    }
+
+    pub fn decode(&mut self, size: usize) {
+        loop {
+            //buffer totally consumed
+            if self.r_buf.is_empty() {
+                return;
+            }
+            //readed socket bytes are not enought
+            if size < HEADER_LENGTH {
+                return;
+            }
+            let buf_len = self.r_buf.len();
+            if buf_len < HEADER_LENGTH {
+                return;
+            }
+            //read and check the frame size.
+            let frame_size = BigEndian::read_i32(&self.r_buf.as_ref()[..4]) as usize;
+            if size < frame_size {
+                return;
+            }
+            if buf_len < frame_size {
+                return;
+            }
+            //there is no more bytes to read for socket, split size and start decoding frame.
+            let _ = self.r_buf.split_to(4);
+            let frame_type = BigEndian::read_i32(&self.r_buf.split_to(4));
+            //take the whole frame for buffer.
+            let frame = self.r_buf.split_to(frame_size - 4);
+            if frame_type == FRAME_TYPE_MESSAGE {
+                let _ = self.s.send(frame);
+                self.in_flight += 1;
+                continue;
+            } else {
+                let s = std::str::from_utf8(frame.as_ref()).unwrap();
+                if s == HEARTBEAT {
+                    self.heartbeat = true;
+                    continue;
+                }
+                if frame_type == FRAME_TYPE_RESPONSE {
+                    self.responses.push(Response::Response(s.to_owned()));
+                } else if frame_type == FRAME_TYPE_ERROR {
+                    self.responses.push(Response::Error(s.to_owned()));
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn read_tls(&mut self) -> io::Result<usize> {
+        if self.tls_sess.0.is_handshaking() {
+            self.tls_sess.0.complete_io(&mut self.socket)?;
+        }
+        if self.tls_sess.0.wants_write() {
+            self.tls_sess.0.complete_io(&mut self.socket)?;
+        }
+        while self.tls_sess.0.wants_read() && self.tls_sess.0.complete_io(&mut self.socket)?.0 != 0
+        {
+        }
+        let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
+        //let mut n: usize = 0;
+        loop {
+            match self.tls_sess.0.read(buf.as_mut_slice()) {
+                Ok(0) => return Ok(0),
+                Ok(b) => {
+                    debug!("read: {}", b);
+                    self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                    self.decode(b);
+                    buf.clear();
+                    return Ok(b);
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    pub fn read_tcp(&mut self) -> io::Result<usize> {
+        let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
+        let n: usize = 0;
+        loop {
+            match self.socket.read(buf.as_mut_slice()) {
+                Ok(0) => return Ok(0),
+                Ok(b) => {
+                    self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                    self.decode(b);
+                    buf.clear();
+                    return Ok(b);
+                }
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        return Ok(n);
+                    }
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    pub fn write_cmd<C: NsqCmd>(&mut self, msg: C) {
+        let msg = msg.as_cmd();
+        debug!("{:?}", msg);
+        write_cmd(&mut self.w_buf, &msg.cmd);
+        if msg.msg.is_empty() {
+            return;
+        }
+        if msg.msg.len() == 1 {
+            write_msg(&mut self.w_buf, &msg.msg[0]);
+            return;
+        }
+        write_mmsg(&mut self.w_buf, &msg.msg);
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn write_tls(&mut self) -> io::Result<usize> {
+        if self.tls_sess.0.is_handshaking() {
+            self.tls_sess.0.complete_io(&mut self.socket)?;
+        }
+        if self.tls_sess.0.wants_write() {
+            self.tls_sess.0.complete_io(&mut self.socket)?;
+        }
+        let mut n: usize = 0;
+        match self.tls_sess.0.write(self.w_buf.as_mut()) {
+            Ok(0) => {
+                self.w_buf.clear();
+            }
+            Ok(b) => {
+                self.w_buf.clear();
+                n = b;
+            }
+            Err(e) => {
+                error!("writing on tls socket");
+                self.w_buf.clear();
+                return Err(e);
+            }
+        }
+        let _ = self.tls_sess.0.complete_io(&mut self.socket);
+        Ok(n)
+    }
+
+    pub fn write_tcp(&mut self) -> io::Result<usize> {
+        match self.socket.write(self.w_buf.as_ref()) {
+            Ok(0) => {
+                self.w_buf.clear();
+                Ok(0)
+            }
+            Ok(n) => {
+                self.w_buf.clear();
+                Ok(n)
+            }
+            Err(e) => {
+                self.w_buf.clear();
+                Err(e)
+            }
         }
     }
 }
 
-impl std::fmt::Display for ConnectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use std::error::Error;
-        std::fmt::Display::fmt(self.description(), f)
+pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
+    let mut backoff = ExponentialBackoff::default();
+    let mut addrs = match addr.to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            error!("[{}] error on lookup: {}", addr, e);
+            process::exit(1);
+        }
+    };
+    loop {
+        info!("trying to connect to nsqd server");
+        if let Some(addr) = addrs.next() {
+            match TcpStream::connect(&addr) {
+                Ok(stream) => {
+                    if let Err(e) = stream.peer_addr() {
+                        error!("[{}] nsqd not connected: {}", addr, e);
+                        if let Some(timeout) = backoff.next_backoff() {
+                            thread::sleep(timeout);
+                            continue;
+                        }
+                    }
+                    info!("[{}] connected", stream.peer_addr().unwrap());
+                    let _ = stream.set_recv_buffer_size(buffer_size);
+                    return stream;
+                }
+                Err(err) => {
+                    error!("could not connect to nsqd: {}", err);
+                    if let Some(timeout) = backoff.next_backoff() {
+                        thread::sleep(timeout);
+                    }
+                }
+            }
+        } else {
+            error!("could not resolve {}", addr);
+            if let Some(timeout) = backoff.next_backoff() {
+                thread::sleep(timeout);
+            }
+        }
+    }
+}
+
+pub fn get_response(resp: Response, expect: String) -> Result<String, ()> {
+    match resp {
+        Response::Response(r) => Ok(r),
+        Response::Error(e) => {
+            error!("{}", expect);
+            error!("error on response: {}", e);
+            Err(())
+        }
     }
 }
