@@ -382,35 +382,28 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         }
     };
     info!("{:?}", addrs);
+    let addr = addrs.next().expect("could not resove addr");
     loop {
         info!("trying to connect to nsqd server");
-        let _addr = addrs.next();
-        info!("{:?}", _addr);
-        if let Some(addr) = addrs.next() {
-            match TcpStream::connect(&addr) {
-                Ok(stream) => {
-                    if let Err(e) = stream.peer_addr() {
-                        error!("[{}] nsqd not connected: {}", addr, e);
-                        if let Some(timeout) = backoff.next_backoff() {
-                            thread::sleep(timeout);
-                            continue;
-                        }
-                    }
-                    info!("[{}] connected", stream.peer_addr().unwrap());
-                    let _ = stream.set_recv_buffer_size(buffer_size);
-                    return stream;
-                }
-                Err(err) => {
-                    error!("could not connect to nsqd: {}", err);
+        info!("{:?}", addr);
+        match TcpStream::connect(&addr) {
+            Ok(stream) => {
+                if let Err(e) = stream.peer_addr() {
+                    error!("[{}] nsqd not connected: {}", addr, e);
                     if let Some(timeout) = backoff.next_backoff() {
                         thread::sleep(timeout);
+                        continue;
                     }
                 }
+                info!("[{}] connected", stream.peer_addr().unwrap());
+                let _ = stream.set_recv_buffer_size(buffer_size);
+                return stream;
             }
-        } else {
-            error!("could not resolve {}", addr);
-            if let Some(timeout) = backoff.next_backoff() {
-                thread::sleep(timeout);
+            Err(err) => {
+                error!("could not connect to nsqd: {}", err);
+                if let Some(timeout) = backoff.next_backoff() {
+                    thread::sleep(timeout);
+                }
             }
         }
     }
