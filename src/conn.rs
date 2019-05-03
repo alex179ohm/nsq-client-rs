@@ -149,10 +149,10 @@ impl Conn {
                     continue;
                 }
                 Ok(n) => {
-                    info!("read n bytes: {}", n);
+                    //info!("read n bytes: {}", n);
                     //self.decode(n);
                     if !self.responses.is_empty() {
-                        info!("response read");
+                        //info!("response read");
                         return;
                     } else {
                         continue;
@@ -209,10 +209,10 @@ impl Conn {
             self.processed += 1;
         }
         info!("processed {}", self.processed);
-        if self.processed == 2000 {
-            info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
-            std::process::exit(0);
-        }
+        //if self.processed == 2000 {
+        //    info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
+        //    std::process::exit(0);
+        //}
     }
 
     pub fn decode(&mut self, size: usize) {
@@ -381,12 +381,12 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
             process::exit(1);
         }
     };
-    info!("{:?}", addrs);
-    let addr = addrs.next().expect("could not resove addr");
+    //info!("{:?}", addrs);
+    let tcp_addr = addrs.next().expect("could not resove addr");
     loop {
-        info!("trying to connect to nsqd server");
-        info!("{:?}", addr);
-        match TcpStream::connect(&addr) {
+        info!("[{}] trying to connect to nsqd server", addr);
+        //info!("{}", addr);
+        match TcpStream::connect(&tcp_addr) {
             Ok(stream) => {
                 //if let Err(e) = stream.peer_addr() {
                 //    info!("error on connection: {}", e);
