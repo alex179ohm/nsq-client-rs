@@ -388,15 +388,18 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         info!("{:?}", addr);
         match TcpStream::connect(&addr) {
             Ok(stream) => {
+                if let Err(e) = stream.peer_addr() {
+                    info!("error on connection: {}", e);
+                    if let Some(timeout) = backoff.next_backoff() {
+                        thread::sleep(timeout);
+                    }
+                }
                 info!("[{}] connected", addr);
                 let _ = stream.set_recv_buffer_size(buffer_size);
                 return stream;
             }
             Err(err) => {
                 error!("could not connect to nsqd: {}", err);
-                if let Some(timeout) = backoff.next_backoff() {
-                    thread::sleep(timeout);
-                }
             }
         }
     }
