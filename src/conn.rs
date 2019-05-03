@@ -394,7 +394,7 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
                 //        thread::sleep(timeout);
                 //    }
                 //}
-                thread::sleep_ms(500);
+                thread::sleep_ms(1000);
                 info!("[{}] connected", addr);
                 let _ = stream.set_recv_buffer_size(buffer_size);
                 return stream;
