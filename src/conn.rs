@@ -393,7 +393,6 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
                     if let Some(timeout) = backoff.next_backoff() {
                         thread::sleep(timeout);
                     }
-                    continue
                 }
                 info!("[{}] connected", addr);
                 let _ = stream.set_recv_buffer_size(buffer_size);

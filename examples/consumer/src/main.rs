@@ -1,4 +1,4 @@
-use nsq_rust::{Client, Consumer, Context, Msg, Fin, Config};
+use nsq_client::{Client, Consumer, Context, Msg, Fin, Config};
 use log::info;
 use env_logger;
 
@@ -15,7 +15,7 @@ impl Consumer for MyReader {
 fn main() {
     env_logger::init();
     let mut config = Config::default();
-    //config.tls();
+    config.tls();
     let mut c = Client::new(
         "test", // channel
         "test", // topic
