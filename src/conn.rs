@@ -1,6 +1,6 @@
 use crate::codec::{
-    write_cmd, write_magic, write_mmsg, write_msg, Response, FRAME_TYPE_ERROR,
-    FRAME_TYPE_MESSAGE, FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
+    write_cmd, write_magic, write_mmsg, write_msg, Response, FRAME_TYPE_ERROR, FRAME_TYPE_MESSAGE,
+    FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
 use crate::msgs::{Cmd, Identify, NsqCmd, VERSION};
@@ -78,7 +78,7 @@ impl Conn {
         addr: String,
         config: Config,
         r: Receiver<Cmd>,
-//        s: Sender<Msg>,
+        //        s: Sender<Msg>,
         s: Sender<BytesMut>,
         hostname: &str,
         verify_server_cert: bool,
@@ -388,12 +388,9 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         //info!("{}", addr);
         match TcpStream::connect(&tcp_addr) {
             Ok(stream) => {
-                //if let Err(e) = stream.peer_addr() {
-                //    info!("error on connection: {}", e);
-                //    if let Some(timeout) = backoff.next_backoff() {
-                //        thread::sleep(timeout);
-                //    }
-                //}
+                if let Ok(err) = stream.take_error() {
+                    error!("error on stream: {:?}", err.unwrap());
+                }
                 thread::sleep_ms(1000);
                 info!("[{}] connected", addr);
                 let _ = stream.set_recv_buffer_size(buffer_size);
