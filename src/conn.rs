@@ -112,7 +112,7 @@ impl Conn {
     }
 
     #[cfg(feature = "tls")]
-    pub fn tls_enabled(&mut self) {
+    pub fn tls_enabled(&mut self, hostname: &str, release: bool) {
         self.tls = true;
         debug!("tls enabled");
         let _ = self.tls_sess.0.complete_io(&mut self.socket);
@@ -274,41 +274,35 @@ impl Conn {
         }
         let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
         //let mut n: usize = 0;
-        loop {
-            match self.tls_sess.0.read(buf.as_mut_slice()) {
-                Ok(0) => return Ok(0),
-                Ok(b) => {
-                    debug!("read: {}", b);
-                    self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
-                    self.decode(b);
-                    buf.clear();
-                    return Ok(b);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
+        match self.tls_sess.0.read_to_end(&mut buf) {
+            Ok(0) => Ok(0),
+            Ok(b) => {
+                debug!("read: {}", b);
+                self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                self.decode(b);
+                buf.clear();
+                Ok(b)
             }
+            Err(e) => Err(e),
         }
     }
 
     pub fn read_tcp(&mut self) -> io::Result<usize> {
         let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
         let n: usize = 0;
-        loop {
-            match self.socket.read(buf.as_mut_slice()) {
-                Ok(0) => return Ok(0),
-                Ok(b) => {
-                    self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
-                    self.decode(b);
-                    buf.clear();
-                    return Ok(b);
+        match self.socket.read_to_end(&mut buf) {
+            Ok(0) => Ok(0),
+            Ok(b) => {
+                self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                self.decode(b);
+                buf.clear();
+                Ok(b)
+            }
+            Err(e) => {
+                if e.kind() == io::ErrorKind::WouldBlock {
+                    return Ok(n);
                 }
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        return Ok(n);
-                    }
-                    return Err(e);
-                }
+                Err(e)
             }
         }
     }

@@ -9,10 +9,10 @@ use log::{debug, error, info};
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
 
-use crate::codec::decode_msg;
+
 #[cfg(feature = "async")]
 use crate::async_context::ContextAsync;
-use crate::config::{Config, NsqdConfig};
+use crate::codec::decode_msg;
 use crate::conn::Conn;
 #[cfg(feature = "async")]
 use futures::executor::LocalPool;
@@ -21,6 +21,7 @@ use std::future::Future;
 //use crate::handler::Handler;
 use crate::msgs::{Auth, Cmd, Msg, Nop, NsqCmd, Rdy, Subscribe};
 use crate::reader::Consumer;
+use crate::config::{Config, NsqdConfig};
 use bytes::BytesMut;
 
 const CONNECTION: Token = Token(0);
@@ -135,7 +136,7 @@ impl Client {
         info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
         if nsqd_config.tls_v1 {
             #[cfg(feature = "tls")]
-            conn.tls_enabled();
+            conn.tls_enabled("localhost", false);
             let resp = conn
                 .get_response(format!("[{}] tls handshake failed", self.addr))
                 .unwrap();
@@ -184,7 +185,7 @@ impl Client {
                 if ev.readiness().is_readable() && ev.token() == CONNECTION {
                     //try send responses
                     let res = conn.read();
-                    if let Err(_) = res {
+                    if res.is_err() {
                         break;
                     }
                     conn.write_messages();
@@ -211,20 +212,26 @@ impl Client {
                     if let Ok(ref mut msg) = msg.recv() {
                         let msg = decode_msg(msg);
                         if msg.1 >= max_attemps {
-                            boxed.on_max_attemps(Msg {
+                            boxed.on_max_attemps(
+                                Msg {
+                                    timestamp: msg.0,
+                                    attemps: msg.1,
+                                    id: msg.2,
+                                    body: msg.3,
+                                },
+                                &mut ctx,
+                            );
+                            continue;
+                        }
+                        boxed.handle(
+                            Msg {
                                 timestamp: msg.0,
                                 attemps: msg.1,
                                 id: msg.2,
                                 body: msg.3,
-                            }, &mut ctx);
-                            continue;
-                        }
-                        boxed.handle(Msg {
-                            timestamp: msg.0,
-                            attemps: msg.1,
-                            id: msg.2,
-                            body: msg.3,
-                        }, &mut ctx);
+                            },
+                            &mut ctx,
+                        );
                     }
                 }
             });
