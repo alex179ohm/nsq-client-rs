@@ -171,6 +171,7 @@ impl Client {
             error!("registering handler");
             panic!("{}", e);
         }
+        conn.register(&mut poll, CONNECTION);
         loop {
             if conn.heartbeat {
                 conn.write_cmd(Nop);

@@ -273,7 +273,8 @@ impl Conn {
         while self.tls_sess.0.wants_read() && self.tls_sess.0.complete_io(&mut self.socket)?.0 != 0
         {
         }
-        let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(self.config.output_buffer_size as usize, 0);
         //let mut n: usize = 0;
         match self.tls_sess.0.read(&mut buf) {
             Ok(0) => Ok(0),
@@ -289,7 +290,8 @@ impl Conn {
     }
 
     pub fn read_tcp(&mut self) -> io::Result<usize> {
-        let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(self.config.output_buffer_size as usize, 0);
         let n: usize = 0;
         match self.socket.read(&mut buf) {
             Ok(0) => Ok(0),
@@ -384,7 +386,9 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         match TcpStream::connect(&tcp_addr) {
             Ok(stream) => {
                 if let Ok(err) = stream.take_error() {
-                    error!("error on stream: {:?}", err);
+                    if err.is_some() {
+                        error!("error on stream: {:?}", err);
+                    }
                 }
                 thread::sleep_ms(1000);
                 info!("[{}] connected", addr);
