@@ -151,7 +151,7 @@ impl Conn {
                 }
                 Ok(n) => {
                     info!("read n bytes: {}", n);
-                    self.decode(n);
+                    //self.decode(n);
                     if !self.responses.is_empty() {
                         //info!("response read");
                         return;
@@ -385,11 +385,6 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         //info!("{}", addr);
         match TcpStream::connect(&tcp_addr) {
             Ok(stream) => {
-                if let Ok(err) = stream.take_error() {
-                    if err.is_some() {
-                        error!("error on stream: {:?}", err);
-                    }
-                }
                 thread::sleep_ms(1000);
                 info!("[{}] connected", addr);
                 let _ = stream.set_recv_buffer_size(buffer_size);
