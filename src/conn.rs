@@ -146,11 +146,12 @@ impl Conn {
             let res = self.read();
             match res {
                 Ok(0) => {
+                    info!("read 0 bytes");
                     continue;
                 }
                 Ok(n) => {
-                    //info!("read n bytes: {}", n);
-                    //self.decode(n);
+                    info!("read n bytes: {}", n);
+                    self.decode(n);
                     if !self.responses.is_empty() {
                         //info!("response read");
                         return;
@@ -274,7 +275,7 @@ impl Conn {
         }
         let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
         //let mut n: usize = 0;
-        match self.tls_sess.0.read_to_end(&mut buf) {
+        match self.tls_sess.0.read(&mut buf) {
             Ok(0) => Ok(0),
             Ok(b) => {
                 debug!("read: {}", b);
@@ -290,7 +291,7 @@ impl Conn {
     pub fn read_tcp(&mut self) -> io::Result<usize> {
         let mut buf: Vec<u8> = vec![0; self.config.output_buffer_size as usize];
         let n: usize = 0;
-        match self.socket.read_to_end(&mut buf) {
+        match self.socket.read(&mut buf) {
             Ok(0) => Ok(0),
             Ok(b) => {
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
