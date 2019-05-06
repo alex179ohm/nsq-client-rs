@@ -171,34 +171,6 @@ impl Client {
             error!("registering handler");
             panic!("{}", e);
         }
-        conn.register(&mut poll, CONNECTION);
-        let mut poll = Poll::new().unwrap();
-        let mut evts = Events::with_capacity(1024);
-        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
-        conn.register(&mut poll, CONNECTION);
-        let mut poll = Poll::new().unwrap();
-        let mut evts = Events::with_capacity(1024);
-        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
-        conn.register(&mut poll, CONNECTION);
-        let mut poll = Poll::new().unwrap();
-        let mut evts = Events::with_capacity(1024);
-        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
-        let mut poll = Poll::new().unwrap();
-        let mut evts = Events::with_capacity(1024);
-        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
-        conn.register(&mut poll, CONNECTION);
         loop {
             if conn.heartbeat {
                 conn.write_cmd(Nop);
