@@ -22,9 +22,11 @@ use std::future::Future;
 use crate::msgs::{Auth, Cmd, Msg, Nop, NsqCmd, Rdy, Subscribe};
 use crate::reader::Consumer;
 use crate::config::{Config, NsqdConfig};
+
+
 use bytes::BytesMut;
 
-const CONNECTION: Token = Token(0);
+const CONNECTION: Token = Token(19_791_988);
 
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);
@@ -163,6 +165,33 @@ impl Client {
         conn.write_cmd(Rdy(self.rdy));
         let _ = conn.write();
         info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
+        let mut poll = Poll::new().unwrap();
+        let mut evts = Events::with_capacity(1024);
+        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
+            error!("registering handler");
+            panic!("{}", e);
+        }
+        conn.register(&mut poll, CONNECTION);
+        let mut poll = Poll::new().unwrap();
+        let mut evts = Events::with_capacity(1024);
+        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
+            error!("registering handler");
+            panic!("{}", e);
+        }
+        conn.register(&mut poll, CONNECTION);
+        let mut poll = Poll::new().unwrap();
+        let mut evts = Events::with_capacity(1024);
+        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
+            error!("registering handler");
+            panic!("{}", e);
+        }
+        conn.register(&mut poll, CONNECTION);
+        let mut poll = Poll::new().unwrap();
+        let mut evts = Events::with_capacity(1024);
+        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
+            error!("registering handler");
+            panic!("{}", e);
+        }
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
         if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
