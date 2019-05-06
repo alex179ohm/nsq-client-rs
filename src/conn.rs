@@ -389,7 +389,7 @@ pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
         match TcpStream::connect(&tcp_addr) {
             Ok(stream) => {
                 if let Ok(err) = stream.take_error() {
-                    error!("error on stream: {:?}", err.unwrap());
+                    error!("error on stream: {:?}", err);
                 }
                 thread::sleep_ms(1000);
                 info!("[{}] connected", addr);
