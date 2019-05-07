@@ -15,7 +15,7 @@ use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
 #[cfg(feature = "tls")]
 use rustls::Session;
 use std::io::{self, Read, Write};
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, SocketAddr};
 use std::process;
 use std::thread;
 
@@ -83,7 +83,26 @@ impl Conn {
         hostname: &str,
         verify_server_cert: bool,
     ) -> Conn {
-        let socket = connect(addr.as_str(), config.output_buffer_size as usize);
+        let mut addrs = match addr.to_socket_addrs() {
+            Ok(addrs) => addrs,
+            Err(e) => {
+                error!("[{}] error on lookup: {}", addr, e);
+                process::exit(1);
+            }
+        };
+        debug!("{:?}", addrs);
+        let mut backoff = ExponentialBackoff::default();
+        let socket = loop {
+            match connect(&addrs.next().expect("could not resove addr")) {
+                Ok(stream) => break stream,
+                Err(e) => {
+                    error!("error on connect to nsqd: {:?}", e);
+                    if let Some(timeout) = backoff.next_backoff() {
+                        thread::sleep(timeout);
+                    }
+                }
+            }
+        };
         Conn {
             addr,
             socket,
@@ -105,10 +124,20 @@ impl Conn {
 
     pub fn start(&mut self) {
         write_magic(&mut self.w_buf, VERSION);
-        let _ = self.write();
+        if let Err(e) = self.write() {
+            error!("error on write to socket: {:?}", e);
+        };
+        if let Err(e) = self.socket.flush() {
+            error!("error on flush socket: {:?}", e);
+        };
         let config = serde_json::to_string(&self.config).unwrap();
         self.write_cmd(Identify(config).as_cmd());
-        let _ = self.write();
+        if let Err(e) = self.write() {
+            error!("error on write to socket: {:?}", e);
+        };
+        if let Err(e) = self.socket.flush() {
+            error!("error on flush socket: {:?}", e);
+        }
     }
 
     #[cfg(feature = "tls")]
@@ -205,7 +234,12 @@ impl Conn {
         let msgs: Vec<Cmd> = self.r.try_iter().collect();
         for msg in msgs {
             self.write_cmd(msg);
-            let _ = self.write();
+            if let Err(e) = self.write() {
+                error!("error writing msg on socket: {:?}", e);
+            };
+            if let Err(e) = self.socket.flush() {
+                error!("error flushing socket: {:?}", e);
+            };
             self.in_flight -= 1;
             self.processed += 1;
         }
@@ -369,32 +403,15 @@ impl Conn {
     }
 }
 
-pub fn connect(addr: &str, buffer_size: usize) -> TcpStream {
-    let mut backoff = ExponentialBackoff::default();
-    let mut addrs = match addr.to_socket_addrs() {
-        Ok(addrs) => addrs,
-        Err(e) => {
-            error!("[{}] error on lookup: {}", addr, e);
-            process::exit(1);
-        }
+pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
+    let tcpstream = if cfg!(windows) {
+        net2::TcpBuilder::new_v4().unwrap().bind("0.0.0.0").expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
+    } else {
+        net2::TcpBuilder::new_v4().expect("failed to create tcp stream").to_tcp_stream().unwrap()
     };
-    //info!("{:?}", addrs);
-    let tcp_addr = addrs.next().expect("could not resove addr");
-    loop {
         info!("[{}] trying to connect to nsqd server", addr);
         //info!("{}", addr);
-        match TcpStream::connect(&tcp_addr) {
-            Ok(stream) => {
-                thread::sleep_ms(1000);
-                info!("[{}] connected", addr);
-                let _ = stream.set_recv_buffer_size(buffer_size);
-                return stream;
-            }
-            Err(err) => {
-                error!("could not connect to nsqd: {}", err);
-            }
-        }
-    }
+    TcpStream::connect_stream(tcpstream, &addr)
 }
 
 pub fn get_response(resp: Response, expect: String) -> Result<String, ()> {

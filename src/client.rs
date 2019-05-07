@@ -167,11 +167,11 @@ impl Client {
         info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
+        conn.register(&mut poll, CONNECTION);
         if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
             error!("registering handler");
             panic!("{}", e);
         }
-        conn.register(&mut poll, CONNECTION);
         loop {
             if conn.heartbeat {
                 conn.write_cmd(Nop);
