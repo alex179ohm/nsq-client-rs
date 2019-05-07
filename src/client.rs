@@ -13,7 +13,7 @@ use serde_json;
 #[cfg(feature = "async")]
 use crate::async_context::ContextAsync;
 use crate::codec::decode_msg;
-use crate::conn::{Conn, CONNECTION};
+use crate::conn::{Conn, CONNECTION, State};
 #[cfg(feature = "async")]
 use futures::executor::LocalPool;
 #[cfg(feature = "async")]
@@ -122,49 +122,7 @@ impl Client {
             #[cfg(feature = "tls")]
             false,
         );
-        conn.start();
-        let identify_response = conn
-            .get_response(format!("[{}] failed to indentify", self.addr))
-            .unwrap();
-        let nsqd_config: NsqdConfig =
-            serde_json::from_str(&identify_response).expect("failed to decode identify response");
-        info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
-        if nsqd_config.tls_v1 {
-            #[cfg(feature = "tls")]
-            conn.tls_enabled("localhost", false);
-            let resp = conn
-                .get_response(format!("[{}] tls handshake failed", self.addr))
-                .unwrap();
-            info!("[{}] tls connection: {}", self.addr, resp)
-        }
-        if nsqd_config.auth_required {
-            if secret.is_empty() {
-                error!("[{}] authentication required", self.addr);
-                error!("secret token needed");
-                process::exit(1)
-            }
-            conn.write_cmd(Auth(secret));
-            let _ = conn.write();
-            let resp = conn
-                .get_response(format!("[{}] authentication failed", self.addr))
-                .unwrap();
-            info!("[{}] authentication {}", self.addr, resp);
-        }
-        conn.write_cmd(Subscribe(self.channel.clone(), self.topic.clone()));
-        let _ = conn.write();
-        let resp = conn
-            .get_response(format!(
-                "[{}] subscribe channel: {} topic: {} failed",
-                self.addr, self.channel, self.topic
-            ))
-            .unwrap();
-        info!(
-            "[{}] subscribe channel: {} topic: {} {}",
-            self.addr, self.channel, self.topic, resp
-        );
-        conn.write_cmd(Rdy(self.rdy));
-        let _ = conn.write();
-        info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
+        //conn.start();
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
         conn.register(&mut poll);
@@ -172,6 +130,24 @@ impl Client {
             error!("registering handler");
             panic!("{}", e);
         }
+        conn.magic();
+        //conn.write_cmd(Subscribe(self.channel.clone(), self.topic.clone()));
+        //let _ = conn.write();
+        //let resp = conn
+        //    .get_response(format!(
+        //        "[{}] subscribe channel: {} topic: {} failed",
+        //        self.addr, self.channel, self.topic
+        //    ))
+        //    .unwrap();
+        //info!(
+        //    "[{}] subscribe channel: {} topic: {} {}",
+        //    self.addr, self.channel, self.topic, resp
+        //);
+        //conn.write_cmd(Rdy(self.rdy));
+        //let _ = conn.write();
+        //info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
+        let mut tls: bool = false;
+        let mut auth: bool = false;
         loop {
             if conn.heartbeat {
                 conn.write_cmd(Nop);
@@ -184,15 +160,95 @@ impl Client {
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
-                if ev.readiness().is_readable() && ev.token() == CONNECTION {
-                    //try send responses
-                    let res = conn.read();
-                    if res.is_err() {
-                        break;
+                if ev.token() == CONNECTION {
+                    if ev.readiness().is_readable() {
+                        if conn.state != State::Started {
+                            match conn.state {
+                                State::Identify => {
+                                    let resp = conn
+                                        .get_response(format!("[{}] failed to indentify", self.addr))
+                                        .unwrap();
+                                    let nsqd_config: NsqdConfig =
+                                        serde_json::from_str(&resp).expect("failed to decode identify response");
+                                    info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
+                                    if nsqd_config.tls_v1 {
+                                        #[cfg(feature = "tls")]
+                                        conn.tls_enabled("localhost", false);
+                                        let resp = conn
+                                            .get_response(format!("[{}] tls handshake failed", self.addr))
+                                            .unwrap();
+                                        info!("[{}] tls connection: {}", self.addr, resp)
+                                    }
+                                    if nsqd_config.auth_required {
+                                        if secret.is_empty() {
+                                            error!("[{}] authentication required", self.addr);
+                                            error!("secret token needed");
+                                            process::exit(1)
+                                        }
+                                        conn.state = State::Auth;
+                                    } else {
+                                        conn.state = State::Subscribe;
+                                    }
+                                },
+                                State::Auth => {
+                                    let resp = conn
+                                        .get_response(format!("[{}] authentication failed", self.addr))
+                                        .unwrap();
+                                    info!("[{}] authentication {}", self.addr, resp);
+
+                                },
+                                State::Subscribe => {
+                                    let resp = conn
+                                        .get_response(format!("[{}] authentication failed", self.addr))
+                                        .unwrap();
+                                    info!(
+                                        "[{}] subscribe channel: {} topic: {} {}",
+                                        self.addr, self.channel, self.topic, resp
+                                    );
+                                    conn.state = State::Rdy;
+                                },
+                                _ => {},
+                            }
+                        } else {
+                            if let Err(e) = conn.read() {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    error!("reading on socket: {:?}", e);
+                                    break;
+                                }
+                            }
+                        }
+                        conn.reregister(&mut poll, Ready::writable());
+                    } else {
+                        if conn.state != State::Started {
+                            match conn.state {
+                                State::Identify => {
+                                    conn.identify();
+                                },
+                                State::Auth => {
+                                    debug!("writing auth");
+                                    conn.auth(secret.clone());
+                                },
+                                State::Subscribe => {
+                                    conn.subscribe(self.topic.clone(), self.channel.clone());
+                                },
+                                State::Rdy => {
+                                    conn.rdy(self.rdy);
+                                },
+                                _ => {},
+                            }
+                            if let Err(e) = conn.write() {
+                                error!("writing on socket: {:?}", e);
+                            }
+                            if conn.need_response {
+                                conn.reregister(&mut poll, Ready::readable());
+                            } else {
+                                conn.reregister(&mut poll, Ready::writable());
+                            }
+                        } else {
+                            conn.reregister(&mut poll, Ready::readable());
+                        }
                     }
-                    conn.write_messages();
-                }
-                if ev.readiness().is_writable() && ev.token() != CONNECTION {
+                } else {
                     conn.write_messages();
                 }
             }

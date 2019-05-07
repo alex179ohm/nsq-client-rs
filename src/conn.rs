@@ -3,7 +3,7 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Cmd, Identify, NsqCmd, VERSION};
+use crate::msgs::{Cmd, Identify, Auth, Rdy, Subscribe, NsqCmd, VERSION};
 #[cfg(feature = "tls")]
 use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
@@ -21,15 +21,15 @@ use std::thread;
 
 pub const CONNECTION: Token = Token(0);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum State {
-    Magic,
+    Start,
     Identify,
     Tls,
+    Auth,
     Subscribe,
     Rdy,
-    Consumer,
-    Producer,
+    Started,
 }
 
 #[derive(Debug)]
@@ -63,8 +63,8 @@ pub struct Conn {
     tls: bool,
     now: std::time::Instant,
     processed: u32,
-    need_response: bool,
-    state: State,
+    pub need_response: bool,
+    pub state: State,
 }
 
 impl Conn {
@@ -86,7 +86,7 @@ impl Conn {
             now: std::time::Instant::now(),
             processed: 0,
             need_response: false,
-            state: State::Magic,
+            state: State::Start,
         }
     }
 
@@ -108,7 +108,6 @@ impl Conn {
         };
         debug!("{:?}", addrs);
         let mut backoff = ExponentialBackoff::default();
-        thread::sleep(std::time::Duration::from_secs(1));
         let socket = loop {
             match connect(&addrs.next().expect("could not resove addr")) {
                 Ok(stream) => break stream,
@@ -136,16 +135,51 @@ impl Conn {
             now: std::time::Instant::now(),
             processed: 0,
             need_response: false,
-            state: State::Magic,
+            state: State::Start,
         }
     }
-    //lookup for address and connect to nsqd server.
+    
+    pub fn magic(&mut self) {
+        write_magic(&mut self.w_buf, VERSION);
+        self.state = State::Identify;
+    }
+
+    pub fn identify(&mut self) {
+        let config = serde_json::to_string(&self.config).unwrap();
+        self.write_cmd(Identify(config).as_cmd());
+        self.state = State::Identify;
+        self.need_response = true;
+    }
+
+    pub fn auth(&mut self, secret: String) {
+        self.write_cmd(Auth(secret));
+        self.state = State::Auth;
+        self.need_response = true;
+    }
+
+    pub fn subscribe(&mut self, topic: String, channel: String) {
+        self.write_cmd(Subscribe(topic, channel));
+        self.state = State::Subscribe;
+        self.need_response = true;
+    }
+
+    pub fn rdy(&mut self, rdy: u32) {
+        self.write_cmd(Rdy(rdy));
+        self.state = State::Started;
+        self.need_response = false;
+    }
 
     pub fn start(&mut self) {
         write_magic(&mut self.w_buf, VERSION);
-        if let Err(e) = self.write() {
-            error!("error on write to socket: {:?}", e);
-        };
+        loop {
+            if let Err(e) = self.write() {
+                if e.kind() == io::ErrorKind::WouldBlock {
+                    continue
+                }
+                error!("error on write to socket: {:?}", e);
+                break
+            };
+        }
         if let Err(e) = self.socket.flush() {
             error!("error on flush socket: {:?}", e);
         };
@@ -170,6 +204,7 @@ impl Conn {
         if self.tls_sess.0.wants_read() {
             let _ = self.read_tls();
         }
+        self.state = State::Tls;
     }
 
     pub fn register(&mut self, poll: &mut Poll) {
