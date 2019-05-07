@@ -215,6 +215,9 @@ impl Client {
                                 },
                                 _ => {},
                             }
+                            if let Err(e) = conn.write() {
+                                error!("writing on socket: {:?}", e);
+                            }
                             if conn.need_response {
                                 conn.reregister(&mut poll, Ready::readable());
                             } else {
