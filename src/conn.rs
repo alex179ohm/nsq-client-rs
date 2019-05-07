@@ -110,7 +110,11 @@ impl Conn {
         let mut backoff = ExponentialBackoff::default();
         let socket = loop {
             match connect(&addrs.next().expect("could not resove addr")) {
-                Ok(stream) => break stream,
+                Ok(stream) => {
+                    if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize) {
+                        panic!("[{}] error on setting socket buffer size");
+                    }
+                },
                 Err(e) => {
                     error!("[{}] error on connect to nsqd: {:?}", addr, e);
                     if let Some(timeout) = backoff.next_backoff() {
