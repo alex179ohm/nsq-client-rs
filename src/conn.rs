@@ -19,6 +19,19 @@ use std::net::{ToSocketAddrs, SocketAddr};
 use std::process;
 use std::thread;
 
+pub const CONNECTION: Token = Token(0);
+
+#[derive(Debug)]
+pub enum State {
+    Magic,
+    Identify,
+    Tls,
+    Subscribe,
+    Rdy,
+    Consumer,
+    Producer,
+}
+
 #[derive(Debug)]
 pub struct Conn {
     //the addr of the nsqd.
@@ -50,6 +63,8 @@ pub struct Conn {
     tls: bool,
     now: std::time::Instant,
     processed: u32,
+    need_response: bool,
+    state: State,
 }
 
 impl Conn {
@@ -70,6 +85,8 @@ impl Conn {
             in_flight: 0,
             now: std::time::Instant::now(),
             processed: 0,
+            need_response: false,
+            state: State::Magic,
         }
     }
 
@@ -78,7 +95,6 @@ impl Conn {
         addr: String,
         config: Config,
         r: Receiver<Cmd>,
-        //        s: Sender<Msg>,
         s: Sender<BytesMut>,
         hostname: &str,
         verify_server_cert: bool,
@@ -92,6 +108,7 @@ impl Conn {
         };
         debug!("{:?}", addrs);
         let mut backoff = ExponentialBackoff::default();
+        thread::sleep(std::time::Duration::from_secs(1));
         let socket = loop {
             match connect(&addrs.next().expect("could not resove addr")) {
                 Ok(stream) => break stream,
@@ -118,6 +135,8 @@ impl Conn {
             in_flight: 0,
             now: std::time::Instant::now(),
             processed: 0,
+            need_response: false,
+            state: State::Magic,
         }
     }
     //lookup for address and connect to nsqd server.
@@ -153,20 +172,17 @@ impl Conn {
         }
     }
 
-    pub fn register(&mut self, poll: &mut Poll, token: Token) {
-        poll.register(&self.socket, token, Ready::all(), PollOpt::edge())
+    pub fn register(&mut self, poll: &mut Poll) {
+        poll.register(&self.socket, CONNECTION, Ready::writable(), PollOpt::edge())
             .expect("cannot register socket on poll");
+    }
+
+    pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
+        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge()).expect("cannot reregister socket on poll") 
     }
 
     pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
         self.poll_response();
-        //if self.tls {
-        //    info!("get resonse tls");
-        //    if let Some(r) = self.responses.pop() {
-        //        get_response(r, on_err.clone());
-        //    }
-        //    return Ok("Ok".to_owned());
-        //}
         get_response(self.responses.pop().unwrap(), on_err)
     }
 

@@ -13,7 +13,7 @@ use serde_json;
 #[cfg(feature = "async")]
 use crate::async_context::ContextAsync;
 use crate::codec::decode_msg;
-use crate::conn::Conn;
+use crate::conn::{Conn, CONNECTION};
 #[cfg(feature = "async")]
 use futures::executor::LocalPool;
 #[cfg(feature = "async")]
@@ -26,7 +26,7 @@ use crate::config::{Config, NsqdConfig};
 
 use bytes::BytesMut;
 
-const CONNECTION: Token = Token(19_791_988);
+//const CONNECTION: Token = Token(19_791_988);
 
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);
@@ -167,7 +167,7 @@ impl Client {
         info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
-        conn.register(&mut poll, CONNECTION);
+        conn.register(&mut poll);
         if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
             error!("registering handler");
             panic!("{}", e);
