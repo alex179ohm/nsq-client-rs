@@ -195,6 +195,7 @@ impl Client {
                                         .get_response(format!("[{}] authentication failed", self.addr))
                                         .unwrap();
                                     info!("[{}] authentication {}", self.addr, resp);
+                                    conn.state = State::Subscribe;
 
                                 },
                                 State::Subscribe => {
