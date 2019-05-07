@@ -131,29 +131,7 @@ impl Client {
             panic!("{}", e);
         }
         conn.magic();
-        //conn.write_cmd(Subscribe(self.channel.clone(), self.topic.clone()));
-        //let _ = conn.write();
-        //let resp = conn
-        //    .get_response(format!(
-        //        "[{}] subscribe channel: {} topic: {} failed",
-        //        self.addr, self.channel, self.topic
-        //    ))
-        //    .unwrap();
-        //info!(
-        //    "[{}] subscribe channel: {} topic: {} {}",
-        //    self.addr, self.channel, self.topic, resp
-        //);
-        //conn.write_cmd(Rdy(self.rdy));
-        //let _ = conn.write();
-        //info!("[{}] Ready to go RDY: {}", self.addr, self.rdy);
-        let mut tls: bool = false;
-        let mut auth: bool = false;
         loop {
-            if conn.heartbeat {
-                conn.write_cmd(Nop);
-                let _ = conn.write();
-                conn.heartbeat_done();
-            }
             if let Err(e) = poll.poll(&mut evts, None) {
                 error!("polling events failed");
                 panic!("{}", e);
@@ -237,15 +215,20 @@ impl Client {
                                 },
                                 _ => {},
                             }
-                            if let Err(e) = conn.write() {
-                                error!("writing on socket: {:?}", e);
-                            }
                             if conn.need_response {
                                 conn.reregister(&mut poll, Ready::readable());
                             } else {
                                 conn.reregister(&mut poll, Ready::writable());
                             }
                         } else {
+                            if conn.heartbeat {
+                                conn.write_cmd(Nop);
+                                if let Err(e) = conn.write() {
+                                    error!("writing on socket: {:?}", e);
+                                }
+                                conn.heartbeat_done();
+                            }
+                            conn.write_messages();
                             conn.reregister(&mut poll, Ready::readable());
                         }
                     }
