@@ -114,6 +114,7 @@ impl Conn {
                     if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize) {
                         panic!("[{}] error on setting socket buffer size");
                     }
+                    break stream;
                 },
                 Err(e) => {
                     error!("[{}] error on connect to nsqd: {:?}", addr, e);
