@@ -10,7 +10,7 @@ use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, Sender};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
 #[cfg(feature = "tls")]
 use rustls::Session;
@@ -96,7 +96,7 @@ impl Conn {
             match connect(&addrs.next().expect("could not resove addr")) {
                 Ok(stream) => break stream,
                 Err(e) => {
-                    error!("error on connect to nsqd: {:?}", e);
+                    error!("[{}] error on connect to nsqd: {:?}", addr, e);
                     if let Some(timeout) = backoff.next_backoff() {
                         thread::sleep(timeout);
                     }
@@ -175,14 +175,12 @@ impl Conn {
             let res = self.read();
             match res {
                 Ok(0) => {
-                    info!("read 0 bytes");
+                    trace!("read 0 bytes");
                     continue;
                 }
                 Ok(n) => {
-                    info!("read n bytes: {}", n);
-                    //self.decode(n);
+                    trace!("read n bytes: {}", n);
                     if !self.responses.is_empty() {
-                        //info!("response read");
                         return;
                     } else {
                         continue;
