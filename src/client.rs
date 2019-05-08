@@ -220,6 +220,8 @@ impl Client {
                             }
                             conn.need_response = false;
                         }
+                        //try to write messages
+                        conn.write_messages();
                         conn.reregister(&mut poll, Ready::writable());
                     } else {
                         if conn.state != State::Started {
