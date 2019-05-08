@@ -322,7 +322,7 @@ impl Conn {
                 debug!("read: {}", b);
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
                 self.decode(b);
-                buf.clear();
+                //buf.clear();
                 Ok(b)
             }
             Err(e) => Err(e),
@@ -332,20 +332,18 @@ impl Conn {
     pub fn read_tcp(&mut self) -> io::Result<usize> {
         let mut buf: Vec<u8> = Vec::new();
         buf.resize(self.config.output_buffer_size as usize, 0);
-        let n: usize = 0;
         match self.socket.read(&mut buf) {
             Ok(0) => Ok(0),
             Ok(b) => {
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
-                debug!("{:?}", self.r_buf);
                 self.decode(b);
-                buf.clear();
+                //buf.clear();
                 Ok(b)
             }
             Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(n);
-                }
+                //if e.kind() == io::ErrorKind::WouldBlock {
+                //    return Ok(n);
+                //}
                 Err(e)
             }
         }
