@@ -143,7 +143,7 @@ impl Conn {
             state: State::Start,
         }
     }
-    
+
     pub fn magic(&mut self) {
         write_magic(&mut self.w_buf, VERSION);
         self.state = State::Identify;

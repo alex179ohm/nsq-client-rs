@@ -217,12 +217,12 @@ impl Client {
                             }
                             if let Err(e) = conn.write() {
                                 error!("writing on socket: {:?}", e);
-                            }
+                            };
                             if conn.need_response {
                                 conn.reregister(&mut poll, Ready::readable());
                             } else {
                                 conn.reregister(&mut poll, Ready::writable());
-                            }
+                            };
                         } else {
                             if conn.heartbeat {
                                 conn.write_cmd(Nop);
