@@ -131,6 +131,7 @@ impl Client {
             panic!("{}", e);
         }
         conn.magic();
+        let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         loop {
             if let Err(e) = poll.poll(&mut evts, None) {
                 error!("polling events failed");
@@ -161,17 +162,22 @@ impl Client {
                                     let resp = conn
                                         .get_response(format!("[{}] failed to indentify", self.addr))
                                         .unwrap();
-                                    let nsqd_config: NsqdConfig =
+                                    nsqd_config =
                                         serde_json::from_str(&resp).expect("failed to decode identify response");
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
                                     if nsqd_config.tls_v1 {
                                         #[cfg(feature = "tls")]
                                         conn.tls_enabled();
-                                        let resp = conn
-                                            .get_response(format!("[{}] tls handshake failed", self.addr))
-                                            .unwrap();
-                                        info!("[{}] tls connection: {}", self.addr, resp)
+                                        conn.reregister(&mut poll, Ready::readable());
+                                        break;
                                     }
+
+                                },
+                                State::Tls => {
+                                    let resp = conn
+                                        .get_response(format!("[{}] tls handshake failed", self.addr))
+                                        .unwrap();
+                                    info!("[{}] tls connection: {}", self.addr, resp);
                                     if nsqd_config.auth_required {
                                         if secret.is_empty() {
                                             error!("[{}] authentication required", self.addr);

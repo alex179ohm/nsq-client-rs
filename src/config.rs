@@ -129,7 +129,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
 pub struct NsqdConfig {
     pub max_rdy_count: u32,
     pub version: String,

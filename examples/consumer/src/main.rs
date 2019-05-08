@@ -15,7 +15,7 @@ impl Consumer for MyReader {
 fn main() {
     env_logger::init();
     let mut config = Config::default();
-    //config.tls();
+    config.tls();
     let mut c = Client::new(
         "test", // channel
         "test", // topic
