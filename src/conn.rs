@@ -10,7 +10,7 @@ use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, Sender};
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
 #[cfg(feature = "tls")]
 use rustls::Session;
@@ -109,10 +109,11 @@ impl Conn {
         debug!("{:?}", addrs);
         let mut backoff = ExponentialBackoff::default();
         let socket = loop {
-            match connect(&addrs.next().expect("could not resove addr")) {
+            let addr = addrs.next().expect("could not resove addr");
+            match connect(addr) {
                 Ok(stream) => {
                     if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize) {
-                        panic!("[{}] error on setting socket buffer size");
+                        panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
                     }
                     break stream;
                 },
@@ -174,32 +175,8 @@ impl Conn {
         self.need_response = false;
     }
 
-    pub fn start(&mut self) {
-        write_magic(&mut self.w_buf, VERSION);
-        loop {
-            if let Err(e) = self.write() {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    continue
-                }
-                error!("error on write to socket: {:?}", e);
-                break
-            };
-        }
-        if let Err(e) = self.socket.flush() {
-            error!("error on flush socket: {:?}", e);
-        };
-        let config = serde_json::to_string(&self.config).unwrap();
-        self.write_cmd(Identify(config).as_cmd());
-        if let Err(e) = self.write() {
-            error!("error on write to socket: {:?}", e);
-        };
-        if let Err(e) = self.socket.flush() {
-            error!("error on flush socket: {:?}", e);
-        }
-    }
-
     #[cfg(feature = "tls")]
-    pub fn tls_enabled(&mut self, hostname: &str, release: bool) {
+    pub fn tls_enabled(&mut self) {
         self.tls = true;
         debug!("tls enabled");
         let _ = self.tls_sess.0.complete_io(&mut self.socket);
@@ -224,32 +201,6 @@ impl Conn {
     pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
         //self.poll_response();
         get_response(self.responses.pop().unwrap(), on_err)
-    }
-
-    pub fn poll_response(&mut self) {
-        loop {
-            let res = self.read();
-            match res {
-                Ok(0) => {
-                    debug!("read 0 bytes");
-                    continue;
-                }
-                Ok(n) => {
-                    debug!("read n bytes: {}", n);
-                    if !self.responses.is_empty() {
-                        return;
-                    } else {
-                        continue;
-                    }
-                }
-                Err(e) => {
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        continue;
-                    }
-                    return;
-                }
-            }
-        }
     }
 
     pub fn heartbeat_done(&mut self) {
@@ -458,7 +409,7 @@ impl Conn {
     }
 }
 
-pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
+pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
         let tcp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
         debug!("{:?}", tcp_addr);
@@ -467,7 +418,6 @@ pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
         net2::TcpBuilder::new_v4().expect("failed to create tcp stream").to_tcp_stream().unwrap()
     };
     info!("[{}] trying to connect to nsqd server", addr);
-        //info!("{}", addr);
     TcpStream::connect_stream(tcpstream, &addr)
 }
 

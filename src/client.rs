@@ -19,7 +19,7 @@ use futures::executor::LocalPool;
 #[cfg(feature = "async")]
 use std::future::Future;
 //use crate::handler::Handler;
-use crate::msgs::{Auth, Cmd, Msg, Nop, NsqCmd, Rdy, Subscribe};
+use crate::msgs::{Cmd, Msg, Nop, NsqCmd};
 use crate::reader::Consumer;
 use crate::config::{Config, NsqdConfig};
 
@@ -166,7 +166,7 @@ impl Client {
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
                                     if nsqd_config.tls_v1 {
                                         #[cfg(feature = "tls")]
-                                        conn.tls_enabled("localhost", false);
+                                        conn.tls_enabled();
                                         let resp = conn
                                             .get_response(format!("[{}] tls handshake failed", self.addr))
                                             .unwrap();
@@ -184,7 +184,6 @@ impl Client {
                                     }
                                 },
                                 State::Auth => {
-                                    debug!("reading auth");
                                     let resp = conn
                                         .get_response(format!("[{}] authentication failed", self.addr))
                                         .unwrap();
@@ -214,7 +213,6 @@ impl Client {
                                     conn.identify();
                                 },
                                 State::Auth => {
-                                    debug!("writing auth");
                                     conn.auth(secret.clone());
                                 },
                                 State::Subscribe => {
