@@ -170,8 +170,17 @@ impl Client {
                                         conn.tls_enabled();
                                         conn.reregister(&mut poll, Ready::readable());
                                         break;
+                                    };
+                                    if nsqd_config.auth_required {
+                                        if secret.is_empty() {
+                                            error!("[{}] authentication required", self.addr);
+                                            error!("secret token needed");
+                                            process::exit(1)
+                                        }
+                                        conn.state = State::Auth;
+                                    } else {
+                                        conn.state = State::Subscribe;
                                     }
-
                                 },
                                 State::Tls => {
                                     let resp = conn
