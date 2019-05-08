@@ -385,6 +385,7 @@ impl Conn {
             Ok(0) => Ok(0),
             Ok(b) => {
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                debug!("{:?}", self.r_buf);
                 self.decode(b);
                 buf.clear();
                 Ok(b)
@@ -459,7 +460,7 @@ impl Conn {
 
 pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
-        let addr = "127.0.0.1:4150".to_socket_addrs().expect("invalid socket addr").next().expect("cannot unwrap socket");
+        let addr = "0.0.0.0:4150".to_socket_addrs().expect("invalid socket addr").next().expect("cannot unwrap socket");
         debug!("{:?}", addr);
         net2::TcpBuilder::new_v4().unwrap().bind(addr).expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
     } else {
