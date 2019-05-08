@@ -140,7 +140,7 @@ impl Client {
                 debug!("event: {:?}", ev);
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
-                        match = conn.read() {
+                        match conn.read() {
                             Ok(0) => {
                                 if conn.need_response {
                                     conn.reregister(&poll, Ready::readable());
