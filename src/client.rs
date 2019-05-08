@@ -169,6 +169,7 @@ impl Client {
                                     }
                                 },
                                 State::Auth => {
+                                    debug!("reading auth");
                                     let resp = conn
                                         .get_response(format!("[{}] authentication failed", self.addr))
                                         .unwrap();

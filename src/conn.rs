@@ -231,11 +231,11 @@ impl Conn {
             let res = self.read();
             match res {
                 Ok(0) => {
-                    trace!("read 0 bytes");
+                    debug!("read 0 bytes");
                     continue;
                 }
                 Ok(n) => {
-                    trace!("read n bytes: {}", n);
+                    debug!("read n bytes: {}", n);
                     if !self.responses.is_empty() {
                         return;
                     } else {
