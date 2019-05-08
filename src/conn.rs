@@ -222,7 +222,7 @@ impl Conn {
     }
 
     pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
-        self.poll_response();
+        //self.poll_response();
         get_response(self.responses.pop().unwrap(), on_err)
     }
 

@@ -140,6 +140,21 @@ impl Client {
                 debug!("event: {:?}", ev);
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
+                        match = conn.read() {
+                            Ok(0) => {
+                                if conn.need_response {
+                                    conn.reregister(&poll, Ready::readable());
+                                }
+                                break;
+                            },
+                            Err(e) => {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    panic!("Error on reading socket: {:?}", e);
+                                }
+                                break;
+                            },
+                            _ => {},
+                        };
                         if conn.state != State::Started {
                             match conn.state {
                                 State::Identify => {
@@ -189,13 +204,7 @@ impl Client {
                                 },
                                 _ => {},
                             }
-                        } else {
-                            if let Err(e) = conn.read() {
-                                if e.kind() != std::io::ErrorKind::WouldBlock {
-                                    error!("reading on socket: {:?}", e);
-                                    break;
-                                }
-                            }
+                            conn.need_response = false;
                         }
                         conn.reregister(&mut poll, Ready::writable());
                     } else {
