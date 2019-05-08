@@ -459,11 +459,13 @@ impl Conn {
 
 pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
-        net2::TcpBuilder::new_v4().unwrap().bind("0.0.0.0").expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
+        let addr = "127.0.0.1:4150".to_socket_addrs().expect("invalid socket addr").next().expect("cannot unwrap socket");
+        debug!("{:?}", addr);
+        net2::TcpBuilder::new_v4().unwrap().bind(addr).expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
     } else {
         net2::TcpBuilder::new_v4().expect("failed to create tcp stream").to_tcp_stream().unwrap()
     };
-        info!("[{}] trying to connect to nsqd server", addr);
+    info!("[{}] trying to connect to nsqd server", addr);
         //info!("{}", addr);
     TcpStream::connect_stream(tcpstream, &addr)
 }
