@@ -460,6 +460,8 @@ impl Conn {
 
 pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
+        debug!("{:?}", addr);
         net2::TcpBuilder::new_v4().unwrap().bind(addr).expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
     } else {
         net2::TcpBuilder::new_v4().expect("failed to create tcp stream").to_tcp_stream().unwrap()
