@@ -15,7 +15,7 @@ use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
 #[cfg(feature = "tls")]
 use rustls::Session;
 use std::io::{self, Read, Write};
-use std::net::{ToSocketAddrs, SocketAddr};
+use std::net::{ToSocketAddrs, SocketAddr, Ipv4Addr};
 use std::process;
 use std::thread;
 
@@ -460,7 +460,7 @@ impl Conn {
 
 pub fn connect(addr: &SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
-        let addr = "0.0.0.0:0".to_socket_addrs().expect("invalid socket addr").next().expect("cannot unwrap socket");
+        let addr = SocketAddr::new(Ipv4Addr::new(0, 0, 0, 0), 4150);
         debug!("{:?}", addr);
         net2::TcpBuilder::new_v4().unwrap().bind(addr).expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
     } else {
