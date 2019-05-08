@@ -248,6 +248,7 @@ impl Conn {
             self.in_flight -= 1;
             self.processed += 1;
         }
+        info!("inflight: {}", self.in_flight);
         info!("processed {}", self.processed);
         //if self.processed == 2000 {
         //    info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
