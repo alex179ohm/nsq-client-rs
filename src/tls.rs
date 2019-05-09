@@ -61,20 +61,3 @@ fn load_private_key(filename: &str) -> rustls::PrivateKey {
     }
     keys[0].clone()
 }
-
-#[derive(Debug)]
-pub struct TlsConfig {
-    ca_file_path: Option<String>,
-    check_server_cert: bool,
-    server_hostname: String,
-}
-
-impl TlsConfig {
-    pub fn new(ca_file_path: Option<String>, cert_file_path: String, key_file_path: String) -> TlsConfig {
-        TlsConfig {
-            ca_file_path,
-            cert_file_path,
-            key_file_path,
-        }
-    }
-}
