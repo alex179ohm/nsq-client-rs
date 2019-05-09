@@ -225,3 +225,9 @@ impl Config {
         }
     }
 }
+
+pub struct TlsConfig {
+    ca_file_path: Option<String>,
+    verify_server_cert: bool,
+}
+
