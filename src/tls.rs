@@ -39,10 +39,11 @@ impl TlsSession {
             let certfile = fs::File::open(&private_ca).expect("cannot open CA file");
             let mut reader = BufReader::new(certfile);
             config.root_store.add_pem_file(&mut reader).unwrap();
+        } else {
+            config
+                .root_store
+                .add_server_trust_anchors(&TLS_SERVER_ROOTS);
         }
-        config
-            .root_store
-            .add_server_trust_anchors(&TLS_SERVER_ROOTS);
         let mut sess = ClientSession::new(&Arc::new(config), dns_name);
         sess.set_buffer_limit(0);
         //TlsSession(ClientSession::new(&Arc::new(config), dns_name))
