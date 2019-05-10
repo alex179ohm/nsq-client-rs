@@ -5,7 +5,6 @@ use rustls::{
 use std::sync::Arc;
 use std::fs;
 use std::io::BufReader;
-use log::info;
 
 use webpki_roots::TLS_SERVER_ROOTS;
 
@@ -39,14 +38,7 @@ impl TlsSession {
         if !private_ca.is_empty() {
             let certfile = fs::File::open(&private_ca.clone()).expect("cannot open CA file");
             let mut reader = BufReader::new(certfile);
-            match config.root_store.add_pem_file(&mut reader) {
-                Ok((t, r)) => {
-                    info!("parsed private ca file: {}", private_ca);
-                    info!("{} certificate added", t);
-                    info!("{} certificate rejected", r);
-                },
-                Err(_) => {}, 
-            };
+            config.root_store.add_pem_file(&mut reader).unwrap();
         } else {
             config
                 .root_store
