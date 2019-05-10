@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::thread;
 
 use crossbeam::channel::{self, Receiver, Sender};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
@@ -144,7 +144,7 @@ impl Client {
                             },
                             Err(e) => {
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                                    panic!("Error on reading socket: {:?}", e);
+                                    warn!("Error on reading socket: {:?}", e);
                                 }
                                 break;
                             },
