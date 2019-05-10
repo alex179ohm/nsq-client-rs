@@ -105,6 +105,17 @@ pub struct Config {
     ///
     /// Default: **0**
     pub message_timeout: u32,
+
+    /// If None Server Cert verification is disasbled (don't use in production), if Some("") use
+    /// webpki mozilla ca list for verification, Some("private_ca_file") add private ca cert chain
+    /// for verify server cert.
+    ///
+    /// Default: Some("")
+    #[serde(skip)]
+    pub private_ca: String,
+
+    #[serde(skip)]
+    pub verify_server: bool,
 }
 use hostname::get_hostname;
 
@@ -125,6 +136,8 @@ impl Default for Config {
             output_buffer_timeout: 250,
             sample_rate: 0,
             tls_v1: false,
+            verify_server: true,
+            private_ca: String::new(),
         }
     }
 }
@@ -205,9 +218,18 @@ impl Config {
         self
     }
 
-    pub fn tls(&mut self) {
+    pub fn tls(&mut self, verify_server_cert: VerifyServerCert) {
         if cfg!(feature = "tls") {
             self.tls_v1 = true;
+            match verify_server_cert {
+                VerifyServerCert::None => {
+                    self.verify_server = false;
+                }
+                VerifyServerCert::PrivateCA(s) => {
+                    self.verify_server = true;
+                    self.private_ca = s;
+                }
+            }
         } else {
             error!("cannot enable tls without tls feature enabled");
             error!("you must include tls feature or remove \"default-futures = false\"");
@@ -226,8 +248,9 @@ impl Config {
     }
 }
 
-pub struct TlsConfig {
-    ca_file_path: Option<String>,
-    verify_server_cert: bool,
+#[derive(PartialEq, Clone)]
+pub enum VerifyServerCert
+{
+    None,
+    PrivateCA(String),
 }
-

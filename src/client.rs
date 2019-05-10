@@ -26,8 +26,6 @@ use crate::config::{Config, NsqdConfig};
 
 use bytes::BytesMut;
 
-//const CONNECTION: Token = Token(19_791_988);
-
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);
 
@@ -117,10 +115,6 @@ impl Client {
             self.config.clone(),
             self.cmd_channel.1.clone(),
             self.msg_channel.0.clone(),
-            #[cfg(feature = "tls")]
-            "localhost",
-            #[cfg(feature = "tls")]
-            false,
         );
         //conn.start();
         let mut poll = Poll::new().unwrap();

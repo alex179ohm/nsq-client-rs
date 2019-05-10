@@ -1,4 +1,4 @@
-use nsq_client::{Client, Consumer, Context, Msg, Fin, Config};
+use nsq_client::{Client, Consumer, Context, Msg, Fin, Config, VerifyServerCert};
 use log::info;
 use env_logger;
 
@@ -15,7 +15,7 @@ impl Consumer for MyReader {
 fn main() {
     env_logger::init();
     let mut config = Config::default();
-    config.tls();
+    config.tls(VerifyServerCert::None);
     let mut c = Client::new(
         "test", // channel
         "test", // topic

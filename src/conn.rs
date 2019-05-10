@@ -96,10 +96,9 @@ impl Conn {
         config: Config,
         r: Receiver<Cmd>,
         s: Sender<BytesMut>,
-        hostname: &str,
-        verify_server_cert: bool,
     ) -> Conn {
-        let mut addrs = match addr.to_socket_addrs() {
+        let server_name = addr.clone();
+        let mut addrs = match addr.clone().to_socket_addrs() {
             Ok(addrs) => addrs,
             Err(e) => {
                 error!("[{}] error on lookup: {}", addr, e);
@@ -125,8 +124,10 @@ impl Conn {
                 }
             }
         };
+        let verify_server_cert = config.verify_server;
+        let private_ca = config.private_ca.clone();
         Conn {
-            addr,
+            addr: addr.clone(),
             socket,
             r_buf: BytesMut::new(),
             w_buf: BytesMut::new(),
@@ -135,7 +136,7 @@ impl Conn {
             heartbeat: false,
             config,
             responses: Vec::new(),
-            tls_sess: TlsSession::new(hostname, verify_server_cert),
+            tls_sess: TlsSession::new(server_name.split(":").collect::<Vec<&str>>()[0], verify_server_cert, private_ca),
             tls: false,
             in_flight: 0,
             now: std::time::Instant::now(),

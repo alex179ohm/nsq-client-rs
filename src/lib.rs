@@ -22,7 +22,7 @@ mod reader;
 mod tls;
 
 pub use client::{Client, Context};
-pub use config::Config;
+pub use config::{Config, VerifyServerCert};
 pub use conn::Conn;
 pub use msgs::{Cls, Dpub, Fin, Mpub, Msg, NsqCmd, Pub, Requeue, Touch};
 pub use producer::Producer;
