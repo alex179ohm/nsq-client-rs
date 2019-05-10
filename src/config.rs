@@ -229,6 +229,9 @@ impl Config {
                     self.verify_server = true;
                     self.private_ca = s;
                 }
+                VerifyServerCert::PublicCA => {
+                    self.verify_server = true;
+                }
             }
         } else {
             error!("cannot enable tls without tls feature enabled");
@@ -253,4 +256,5 @@ pub enum VerifyServerCert
 {
     None,
     PrivateCA(String),
+    PublicCA,
 }
