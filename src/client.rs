@@ -144,7 +144,7 @@ impl Client {
                             },
                             Err(e) => {
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                                    warn!("Error on reading socket: {:?}", e);
+                                    panic!("Error on reading socket: {:?}", e);
                                 }
                                 break;
                             },
