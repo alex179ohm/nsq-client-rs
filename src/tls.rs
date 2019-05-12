@@ -22,6 +22,12 @@ impl ServerCertVerifier for NoCertVerification {
     }
 }
 
+//struct PrivateVerification;
+//
+//impl ServerCertVerifier for PrivateVerification {
+//
+//}
+
 #[derive(Debug)]
 pub struct TlsSession(pub ClientSession);
 

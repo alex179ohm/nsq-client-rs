@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::thread;
 
 use crossbeam::channel::{self, Receiver, Sender};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
@@ -217,42 +217,40 @@ impl Client {
                         //try to write messages
                         conn.write_messages();
                         conn.reregister(&mut poll, Ready::writable());
+                    } else if conn.state != State::Started {
+                        match conn.state {
+                            State::Identify => {
+                                conn.identify();
+                            },
+                            State::Auth => {
+                                conn.auth(secret.clone());
+                            },
+                            State::Subscribe => {
+                                conn.subscribe(self.topic.clone(), self.channel.clone());
+                            },
+                            State::Rdy => {
+                                conn.rdy(self.rdy);
+                            },
+                            _ => {},
+                        }
+                        if let Err(e) = conn.write() {
+                            error!("writing on socket: {:?}", e);
+                        };
+                        if conn.need_response {
+                            conn.reregister(&mut poll, Ready::readable());
+                        } else {
+                            conn.reregister(&mut poll, Ready::writable());
+                        };
                     } else {
-                        if conn.state != State::Started {
-                            match conn.state {
-                                State::Identify => {
-                                    conn.identify();
-                                },
-                                State::Auth => {
-                                    conn.auth(secret.clone());
-                                },
-                                State::Subscribe => {
-                                    conn.subscribe(self.topic.clone(), self.channel.clone());
-                                },
-                                State::Rdy => {
-                                    conn.rdy(self.rdy);
-                                },
-                                _ => {},
-                            }
+                        if conn.heartbeat {
+                            conn.write_cmd(Nop);
                             if let Err(e) = conn.write() {
                                 error!("writing on socket: {:?}", e);
-                            };
-                            if conn.need_response {
-                                conn.reregister(&mut poll, Ready::readable());
-                            } else {
-                                conn.reregister(&mut poll, Ready::writable());
-                            };
-                        } else {
-                            if conn.heartbeat {
-                                conn.write_cmd(Nop);
-                                if let Err(e) = conn.write() {
-                                    error!("writing on socket: {:?}", e);
-                                }
-                                conn.heartbeat_done();
                             }
-                            conn.write_messages();
-                            conn.reregister(&mut poll, Ready::readable());
+                            conn.heartbeat_done();
                         }
+                        conn.write_messages();
+                        conn.reregister(&mut poll, Ready::readable());
                     }
                 } else {
                     conn.write_messages();

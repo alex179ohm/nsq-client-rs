@@ -136,7 +136,7 @@ impl Conn {
             heartbeat: false,
             config,
             responses: Vec::new(),
-            tls_sess: TlsSession::new(server_name.split(":").collect::<Vec<&str>>()[0], verify_server_cert, private_ca),
+            tls_sess: TlsSession::new(server_name.split(':').collect::<Vec<&str>>()[0], verify_server_cert, private_ca),
             tls: false,
             in_flight: 0,
             now: std::time::Instant::now(),
