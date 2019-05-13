@@ -48,7 +48,7 @@ impl ServerCertVerifier for PrivateVerification {
                           roots: &RootCertStore,
                           presented_certs: &[Certificate],
                           dns_name: webpki::DNSNameRef,
-                          ocsp_response: &[u8]) -> Result<ServerCertVerified, TLSError> {
+                          _ocsp_response: &[u8]) -> Result<ServerCertVerified, TLSError> {
         let (cert, chain, trustroots) = prepare(roots, presented_certs)?;
         //debug!("cert: {:?}", cert);
         debug!("chain: {:?}", chain);
@@ -122,7 +122,7 @@ impl TlsSession {
             let certfile = fs::File::open(&private_ca.clone()).expect("cannot open CA file");
             let mut reader = BufReader::new(certfile);
             config.root_store.add_pem_file(&mut reader).unwrap();
-            config.dangerous().set_certificate_verifier(Arc::new(PrivateVerification));
+            config.dangerous().set_certificate_verifier(Arc::new(PrivateVerification::new()));
         } else {
             config
                 .root_store
