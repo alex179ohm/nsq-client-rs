@@ -7,7 +7,7 @@ use std::fs;
 use std::io::BufReader;
 
 use webpki_roots::TLS_SERVER_ROOTS;
-use log::debug;
+use log::{debug, warn};
 use webpki;
 use untrusted;
 
@@ -58,10 +58,12 @@ impl ServerCertVerifier for PrivateVerification {
                                                         &webpki::TLSServerTrustAnchors(&trustroots),
                                                         &chain,
                                                         now);
-        debug!("cert: {:?}", res_cert);
-        let name = cert.verify_is_valid_for_dns_name(dns_name);
-        debug!("dns_name: {:?}", name);
-        Ok(ServerCertVerified::assertion())
+        if res_cert.is_err() {
+            warn!("cert: {:?}", res_cert);
+        } else {
+            debug!("cert: {:?}", res_cert);
+        }
+        cert.verify_is_valid_for_dns_name(dns_name).map_err(TLSError::WebPKIError).map(|_| ServerCertVerified::assertion())
     }
 
 }
