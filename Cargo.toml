@@ -43,4 +43,5 @@ crossbeam = "0.7"
 rustls = {version = "0.15", features = ["default", "dangerous_configuration"], optional = true}
 webpki-roots = {version = "0.16", optional = true}
 webpki = {version = "0.19", optional = true}
+untrusted = "0.6.2"
 # futures-preview = { version = "0.3.0-alpha.13", optional = true }
