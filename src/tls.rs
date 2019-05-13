@@ -50,10 +50,7 @@ impl TlsSession {
                 .root_store
                 .add_server_trust_anchors(&TLS_SERVER_ROOTS);
         }
-        config.enable_sni = false;
-        let mut sess = ClientSession::new(&Arc::new(config), dns_name);
-        sess.set_buffer_limit(0);
-        //TlsSession(ClientSession::new(&Arc::new(config), dns_name))
+        let sess = ClientSession::new(&Arc::new(config), dns_name);
         TlsSession(sess)
     }
 }
