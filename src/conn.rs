@@ -3,8 +3,7 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Cmd, Identify, Auth, Rdy, Subscribe, NsqCmd, VERSION};
-#[cfg(feature = "tls")]
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION};
 use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
@@ -12,10 +11,10 @@ use bytes::BytesMut;
 use crossbeam::channel::{Receiver, Sender};
 use log::{debug, error, info};
 use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
-#[cfg(feature = "tls")]
 use rustls::Session;
+use std::fmt::Display;
 use std::io::{self, Read, Write};
-use std::net::{ToSocketAddrs, SocketAddr, Ipv4Addr, IpAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::process;
 use std::thread;
 
@@ -33,9 +32,10 @@ pub enum State {
 }
 
 #[derive(Debug)]
-pub struct Conn {
-    //the addr of the nsqd.
-    addr: String,
+pub struct Conn<S>
+where
+    S: Into<String> + Clone,
+{
     //writing buffer where commands are written.
     w_buf: BytesMut,
     //read buffer where data is decoded.
@@ -52,14 +52,12 @@ pub struct Conn {
     //responses
     pub responses: Vec<Response>,
     //config
-    config: Config,
+    config: Config<S>,
     //msgs in flight
     in_flight: u32,
     //tls_session
-    #[cfg(feature = "tls")]
     tls_sess: TlsSession,
     //tls connection enabled/disabled (needed because we not start chatting on encrypted connection)
-    #[cfg(feature = "tls")]
     tls: bool,
     now: std::time::Instant,
     processed: u32,
@@ -67,55 +65,34 @@ pub struct Conn {
     pub state: State,
 }
 
-impl Conn {
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(not(feature = "tls"))]
-    pub fn new(addr: String, config: Config, r: Receiver<Cmd>, s: Sender<Msg>) -> Conn {
-        let socket = connect(addr.as_str());
-        Conn {
-            addr,
-            socket,
-            r_buf: BytesMut::new(),
-            w_buf: BytesMut::new(),
-            r,
-            s,
-            heartbeat: false,
-            config,
-            responses: Vec::new(),
-            in_flight: 0,
-            now: std::time::Instant::now(),
-            processed: 0,
-            need_response: false,
-            state: State::Start,
-        }
-    }
+impl<S> Conn<S>
+where
+    S: Into<String> + Clone,
+{
 
-    #[cfg(feature = "tls")]
-    pub fn new(
-        addr: String,
-        config: Config,
-        r: Receiver<Cmd>,
-        s: Sender<BytesMut>,
-    ) -> Conn {
-        let server_name = addr.clone();
-        let mut addrs = match addr.clone().to_socket_addrs() {
+    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMut>) -> Conn<S>
+    where
+        A: ToSocketAddrs + Into<String> + Display + Clone,
+    {
+        let server_name: String = addr.clone().into();
+        let mut addrs = match addr.to_socket_addrs() {
             Ok(addrs) => addrs,
             Err(e) => {
                 error!("[{}] error on lookup: {}", addr, e);
                 process::exit(1);
             }
         };
-        debug!("{:?}", addrs);
         let mut backoff = ExponentialBackoff::default();
         let socket = loop {
             let addr = addrs.next().expect("could not resove addr");
             match connect(addr) {
                 Ok(stream) => {
-                    if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize) {
+                    if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize)
+                    {
                         panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
                     }
                     break stream;
-                },
+                }
                 Err(e) => {
                     error!("[{}] error on connect to nsqd: {:?}", addr, e);
                     if let Some(timeout) = backoff.next_backoff() {
@@ -124,10 +101,9 @@ impl Conn {
                 }
             }
         };
-        let verify_server_cert = config.verify_server;
-        let private_ca = config.private_ca.clone();
+        let verify_server_cert = config.verify_server.clone();
         Conn {
-            addr: addr.clone(),
+            //addr: addr.clone(),
             socket,
             r_buf: BytesMut::new(),
             w_buf: BytesMut::new(),
@@ -136,7 +112,10 @@ impl Conn {
             heartbeat: false,
             config,
             responses: Vec::new(),
-            tls_sess: TlsSession::new(server_name.split(':').collect::<Vec<&str>>()[0], verify_server_cert, private_ca),
+            tls_sess: TlsSession::new(
+                server_name.split(':').collect::<Vec<&str>>()[0],
+                verify_server_cert,
+            ),
             tls: false,
             in_flight: 0,
             now: std::time::Instant::now(),
@@ -176,7 +155,6 @@ impl Conn {
         self.need_response = false;
     }
 
-    #[cfg(feature = "tls")]
     pub fn tls_enabled(&mut self) {
         self.tls = true;
         debug!("tls enabled");
@@ -196,7 +174,8 @@ impl Conn {
     }
 
     pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
-        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge()).expect("cannot reregister socket on poll") 
+        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge())
+            .expect("cannot reregister socket on poll")
     }
 
     pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
@@ -208,7 +187,6 @@ impl Conn {
         self.heartbeat = false;
     }
 
-    #[cfg(feature = "tls")]
     pub fn read(&mut self) -> io::Result<usize> {
         if self.tls {
             self.read_tls()
@@ -217,23 +195,12 @@ impl Conn {
         }
     }
 
-    #[cfg(not(feature = "tls"))]
-    pub fn read(&mut self) -> io::Result<usize> {
-        self.read_tcp()
-    }
-
-    #[cfg(feature = "tls")]
     pub fn write(&mut self) -> io::Result<usize> {
         if self.tls {
             self.write_tls()
         } else {
             self.write_tcp()
         }
-    }
-
-    #[cfg(not(feature = "tls"))]
-    pub fn write(&mut self) -> io::Result<usize> {
-        self.write_tcp()
     }
 
     pub fn write_messages(&mut self) {
@@ -303,7 +270,6 @@ impl Conn {
         }
     }
 
-    #[cfg(feature = "tls")]
     pub fn read_tls(&mut self) -> io::Result<usize> {
         if self.tls_sess.0.is_handshaking() {
             self.tls_sess.0.complete_io(&mut self.socket)?;
@@ -364,7 +330,6 @@ impl Conn {
         write_mmsg(&mut self.w_buf, &msg.msg);
     }
 
-    #[cfg(feature = "tls")]
     pub fn write_tls(&mut self) -> io::Result<usize> {
         if self.tls_sess.0.is_handshaking() {
             self.tls_sess.0.complete_io(&mut self.socket)?;
@@ -413,9 +378,17 @@ pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
         let tcp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
         debug!("{:?}", tcp_addr);
-        net2::TcpBuilder::new_v4().unwrap().bind(tcp_addr).expect("failed to create and bind tcp stream").to_tcp_stream().unwrap()
+        net2::TcpBuilder::new_v4()
+            .unwrap()
+            .bind(tcp_addr)
+            .expect("failed to create and bind tcp stream")
+            .to_tcp_stream()
+            .unwrap()
     } else {
-        net2::TcpBuilder::new_v4().expect("failed to create tcp stream").to_tcp_stream().unwrap()
+        net2::TcpBuilder::new_v4()
+            .expect("failed to create tcp stream")
+            .to_tcp_stream()
+            .unwrap()
     };
     info!("[{}] trying to connect to nsqd server", addr);
     TcpStream::connect_stream(tcpstream, &addr)

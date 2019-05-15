@@ -1,10 +1,10 @@
 #[cfg(feature = "async")]
 use crate::async_context::ContextAsync;
-#[cfg(feature = "async")]
-use std::future::Future;
 use crate::client::Context;
 use crate::msgs::Msg;
 use crate::msgs::Touch;
+#[cfg(feature = "async")]
+use std::future::Future;
 
 #[cfg(not(feature = "async"))]
 pub trait Consumer: Copy + Sync + Send + 'static {

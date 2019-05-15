@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use crossbeam::channel::Sender;
+use std::sync::Mutex;
 //use crate::client::{CmdChannel};
 use crate::msgs::{Cmd, NsqCmd};
 
@@ -10,7 +10,10 @@ pub struct ContextAsync {
 
 impl ContextAsync {
     pub fn new(cmd: Sender<Cmd>, sentinel: Sender<()>) -> ContextAsync {
-        ContextAsync{ cmd, sentinel: Mutex::new(sentinel) }
+        ContextAsync {
+            cmd,
+            sentinel: Mutex::new(sentinel),
+        }
     }
 
     pub fn send<C: NsqCmd>(&mut self, cmd: C) {

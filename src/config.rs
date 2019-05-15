@@ -1,6 +1,4 @@
-use log::error;
 use serde::{Deserialize, Serialize};
-use std::process;
 
 /// Configuration sent to nsqd to properly config the [Connection](struct.Connection.html)
 ///
@@ -24,7 +22,10 @@ use std::process;
 ///```
 ///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Config {
+pub struct Config<S>
+where
+    S: Into<String> + Clone,
+{
     /// Identifiers sent to nsqd representing this client (consumer specific)
     ///
     /// Default: **hostname** where connection is started
@@ -111,16 +112,19 @@ pub struct Config {
     /// for verify server cert.
     ///
     /// Default: Some("")
-    #[serde(skip)]
-    pub private_ca: String,
+    //#[serde(skip)]
+    //pub private_ca: String,
 
     #[serde(skip)]
-    pub verify_server: bool,
+    pub verify_server: VerifyServerCert<S>,
 }
 use hostname::get_hostname;
 
-impl Default for Config {
-    fn default() -> Config {
+impl<S> Default for Config<S>
+where
+    S: Into<String> + Clone,
+{
+    fn default() -> Config<S> {
         Config {
             client_id: get_hostname(),
             user_agent: String::from("nsq_client"),
@@ -136,8 +140,8 @@ impl Default for Config {
             output_buffer_timeout: 250,
             sample_rate: 0,
             tls_v1: false,
-            verify_server: true,
-            private_ca: String::new(),
+            verify_server: VerifyServerCert::None,
+            //private_ca: String::new(),
         }
     }
 }
@@ -160,7 +164,10 @@ pub struct NsqdConfig {
 }
 
 #[allow(dead_code)]
-impl Config {
+impl<S> Config<S>
+where
+    S: Into<String> + Clone,
+{
     /// Create default [Config](struct.Config.html)
     /// ```no-run
     /// use nsq_client::{Config};
@@ -170,7 +177,7 @@ impl Config {
     ///     assert_eq!(config, Config::default());
     /// }
     /// ```
-    pub fn new() -> Config {
+    pub fn new() -> Config<S> {
         Config {
             ..Default::default()
         }
@@ -185,7 +192,7 @@ impl Config {
     ///     assert_eq!(config.client_id, Some("consumer".to_owned()));
     /// }
     /// ```
-    pub fn client_id<S: Into<String>>(mut self, client_id: S) -> Self {
+    pub fn client_id(mut self, client_id: S) -> Self {
         self.client_id = Some(client_id.into());
         self
     }
@@ -199,7 +206,7 @@ impl Config {
     ///     assert_eq!(config.hostname, Some("node-1".to_owned()));
     /// }
     /// ```
-    pub fn hostname<S: Into<String>>(mut self, hostname: S) -> Self {
+    pub fn hostname(mut self, hostname: S) -> Self {
         self.hostname = Some(hostname.into());
         self
     }
@@ -213,48 +220,32 @@ impl Config {
     ///     assert_eq!(config.user_agent, Some("consumer-1".to_owned()));
     /// }
     /// ```
-    pub fn user_agent<S: Into<String>>(mut self, user_agent: S) -> Self {
+    pub fn user_agent(mut self, user_agent: S) -> Self {
         self.user_agent = user_agent.into();
         self
     }
 
-    pub fn tls(&mut self, verify_server_cert: VerifyServerCert) {
-        if cfg!(feature = "tls") {
-            self.tls_v1 = true;
-            match verify_server_cert {
-                VerifyServerCert::None => {
-                    self.verify_server = false;
-                }
-                VerifyServerCert::PrivateCA(s) => {
-                    self.verify_server = true;
-                    self.private_ca = s;
-                }
-                VerifyServerCert::PublicCA => {
-                    self.verify_server = true;
-                }
-            }
-        } else {
-            error!("cannot enable tls without tls feature enabled");
-            error!("you must include tls feature or remove \"default-futures = false\"");
-            process::exit(1);
-        }
-    }
-
-    pub fn deflate(&mut self, level: u16) {
-        if cfg!(feature = "deflate") {
-            self.deflate = true;
-            self.deflate_level = level;
-        } else {
-            error!("cannot enable deflate, deflate is not supported");
-            process::exit(1);
-        }
+    pub fn tls(&mut self, verify_server_cert: VerifyServerCert<S>) {
+        self.tls_v1 = true;
+        self.verify_server = verify_server_cert;
     }
 }
 
-#[derive(PartialEq, Clone)]
-pub enum VerifyServerCert
+#[derive(PartialEq, Clone, Debug)]
+pub enum VerifyServerCert<S>
+where
+    S: Into<String> + Clone,
 {
     None,
-    PrivateCA(String),
+    PrivateCA(S),
     PublicCA,
+}
+
+impl<S> Default for VerifyServerCert<S>
+where
+    S: Into<String> + Clone,
+{
+    fn default() -> Self {
+        VerifyServerCert::None
+    }
 }

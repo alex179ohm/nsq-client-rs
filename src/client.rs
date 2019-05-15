@@ -1,6 +1,5 @@
 //use std::io::{self, Read, Write};
 use std::process;
-use std::sync::Mutex;
 use std::thread;
 
 use crossbeam::channel::{self, Receiver, Sender};
@@ -9,20 +8,17 @@ use log::{debug, error, info};
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
 
-
-#[cfg(feature = "async")]
-use crate::async_context::ContextAsync;
+//#[cfg(feature = "async")]
+//use crate::async_context::ContextAsync;
 use crate::codec::decode_msg;
-use crate::conn::{Conn, CONNECTION, State};
-#[cfg(feature = "async")]
-use futures::executor::LocalPool;
-#[cfg(feature = "async")]
-use std::future::Future;
-//use crate::handler::Handler;
+use crate::conn::{Conn, State, CONNECTION};
+//#[cfg(feature = "async")]
+//use futures::executor::LocalPool;
+//#[cfg(feature = "async")]
+//use std::future::Future;
+use crate::config::{Config, NsqdConfig};
 use crate::msgs::{Cmd, Msg, Nop, NsqCmd};
 use crate::reader::Consumer;
-use crate::config::{Config, NsqdConfig};
-
 
 use bytes::BytesMut;
 
@@ -56,30 +52,35 @@ impl Sentinel {
     }
 }
 
-pub struct Client {
+pub struct Client<S>
+where
+    S: Into<String> + Clone,
+{
     rdy: u32,
     max_attemps: u16,
     channel: String,
     topic: String,
     addr: String,
-    config: Config,
-    secret: Option<String>,
+    config: Config<S>,
+    secret: Option<S>,
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
     sentinel: Sentinel,
-    //    conn: Connection,
 }
 
-impl Client {
-    pub fn new<S: Into<String>>(
+impl<S> Client<S>
+where
+    S: Into<String> + Clone,
+{
+    pub fn new(
         topic: S,
         channel: S,
         addr: S,
-        config: Config,
-        secret: Option<String>,
+        config: Config<S>,
+        secret: Option<S>,
         rdy: u32,
         max_attemps: u16,
-    ) -> Client {
+    ) -> Client<S> {
         Client {
             topic: topic.into(),
             channel: channel.into(),
@@ -104,11 +105,11 @@ impl Client {
                 }
             }
         });
-        let secret = if let Some(secret) = &self.secret {
-            secret.clone()
-        } else {
-            String::new()
-        };
+        //let secret: String = if let Some(s) = &self.secret {
+        //    *s.into::<String>()
+        //} else {
+        //    String::new()
+        //};
 
         let mut conn = Conn::new(
             self.addr.clone(),
@@ -141,32 +142,34 @@ impl Client {
                                     conn.reregister(&mut poll, Ready::readable());
                                 }
                                 break;
-                            },
+                            }
                             Err(e) => {
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
                                     panic!("Error on reading socket: {:?}", e);
                                 }
                                 break;
-                            },
-                            _ => {},
+                            }
+                            _ => {}
                         };
                         if conn.state != State::Started {
                             match conn.state {
                                 State::Identify => {
                                     let resp = conn
-                                        .get_response(format!("[{}] failed to indentify", self.addr))
+                                        .get_response(format!(
+                                            "[{}] failed to indentify",
+                                            self.addr
+                                        ))
                                         .unwrap();
-                                    nsqd_config =
-                                        serde_json::from_str(&resp).expect("failed to decode identify response");
+                                    nsqd_config = serde_json::from_str(&resp)
+                                        .expect("failed to decode identify response");
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
                                     if nsqd_config.tls_v1 {
-                                        #[cfg(feature = "tls")]
                                         conn.tls_enabled();
                                         conn.reregister(&mut poll, Ready::readable());
                                         break;
                                     };
                                     if nsqd_config.auth_required {
-                                        if secret.is_empty() {
+                                        if self.secret.is_none() {
                                             error!("[{}] authentication required", self.addr);
                                             error!("secret token needed");
                                             process::exit(1)
@@ -175,14 +178,17 @@ impl Client {
                                     } else {
                                         conn.state = State::Subscribe;
                                     }
-                                },
+                                }
                                 State::Tls => {
                                     let resp = conn
-                                        .get_response(format!("[{}] tls handshake failed", self.addr))
+                                        .get_response(format!(
+                                            "[{}] tls handshake failed",
+                                            self.addr
+                                        ))
                                         .unwrap();
                                     info!("[{}] tls connection: {}", self.addr, resp);
                                     if nsqd_config.auth_required {
-                                        if secret.is_empty() {
+                                        if self.secret.is_none() {
                                             error!("[{}] authentication required", self.addr);
                                             error!("secret token needed");
                                             process::exit(1)
@@ -191,47 +197,54 @@ impl Client {
                                     } else {
                                         conn.state = State::Subscribe;
                                     }
-                                },
+                                }
                                 State::Auth => {
                                     let resp = conn
-                                        .get_response(format!("[{}] authentication failed", self.addr))
+                                        .get_response(format!(
+                                            "[{}] authentication failed",
+                                            self.addr
+                                        ))
                                         .unwrap();
                                     info!("[{}] authentication {}", self.addr, resp);
                                     conn.state = State::Subscribe;
-
-                                },
+                                }
                                 State::Subscribe => {
                                     let resp = conn
-                                        .get_response(format!("[{}] authentication failed", self.addr))
+                                        .get_response(format!(
+                                            "[{}] authentication failed",
+                                            self.addr
+                                        ))
                                         .unwrap();
                                     info!(
                                         "[{}] subscribe channel: {} topic: {} {}",
                                         self.addr, self.channel, self.topic, resp
                                     );
                                     conn.state = State::Rdy;
-                                },
-                                _ => {},
+                                }
+                                _ => {}
                             }
                             conn.need_response = false;
                         }
-                        //try to write messages
-                        conn.write_messages();
                         conn.reregister(&mut poll, Ready::writable());
                     } else if conn.state != State::Started {
                         match conn.state {
                             State::Identify => {
                                 conn.identify();
-                            },
-                            State::Auth => {
-                                conn.auth(secret.clone());
+                            }
+                            State::Auth => match &self.secret {
+                                Some(s) => {
+                                    let secret = s.clone();
+                                    conn.auth(secret.into());
+                                }
+                                None => {}
                             },
                             State::Subscribe => {
                                 conn.subscribe(self.topic.clone(), self.channel.clone());
-                            },
+                            }
                             State::Rdy => {
                                 conn.rdy(self.rdy);
-                            },
-                            _ => {},
+                            }
+                            _ => {}
                         }
                         if let Err(e) = conn.write() {
                             error!("writing on socket: {:?}", e);
@@ -323,24 +336,20 @@ impl Client {
 #[derive(Debug)]
 pub struct Context {
     cmd_s: Sender<Cmd>,
-    sentinel: Mutex<Sender<()>>,
-    //sentinel: Sender<()>,
+    sentinel: Sender<()>,
 }
 
 impl Context {
     fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>) -> Context {
         Context {
             cmd_s,
-            sentinel: Mutex::new(sentinel),
-            //sentinel,
+            sentinel: sentinel,
         }
     }
 
     pub fn send<C: NsqCmd>(&mut self, cmd: C) {
         let cmd = cmd.as_cmd();
         let _ = self.cmd_s.send(cmd);
-        let _ = self.sentinel.lock().unwrap().send(());
-        //let _ = self.sentinel.send(());
-        //the sentinel is unlocked where goes out of scope.
+        let _ = self.sentinel.send(());
     }
 }

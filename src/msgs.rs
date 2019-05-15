@@ -69,7 +69,6 @@ impl NsqCmd for Cmd {
     }
 }
 
-
 pub trait Message: Send + 'static {}
 
 pub struct Fin(pub String);
