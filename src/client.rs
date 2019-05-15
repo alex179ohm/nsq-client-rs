@@ -52,8 +52,9 @@ impl Sentinel {
     }
 }
 
-pub struct Client<S>
+pub struct Client<C, S>
 where
+    C: Into<String> + Clone,
     S: Into<String> + Clone,
 {
     rdy: u32,
@@ -61,26 +62,27 @@ where
     channel: String,
     topic: String,
     addr: String,
-    config: Config<S>,
+    config: Config<C>,
     secret: Option<S>,
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
     sentinel: Sentinel,
 }
 
-impl<S> Client<S>
+impl<C, S> Client<C, S>
 where
+    C: Into<String> + Clone,
     S: Into<String> + Clone,
 {
     pub fn new(
         topic: S,
         channel: S,
         addr: S,
-        config: Config<S>,
+        config: Config<C>,
         secret: Option<S>,
         rdy: u32,
         max_attemps: u16,
-    ) -> Client<S> {
+    ) -> Client<C, S> {
         Client {
             topic: topic.into(),
             channel: channel.into(),
@@ -273,7 +275,7 @@ where
     }
 
     #[cfg(not(feature = "async"))]
-    pub fn spawn<C: Consumer>(&mut self, n_threads: usize, reader: C) {
+    pub fn spawn<H: Consumer>(&mut self, n_threads: usize, reader: H) {
         for _i in 0..n_threads {
             let mut boxed = Box::new(reader);
             let cmd = self.cmd_channel.0.clone();
@@ -307,25 +309,6 @@ where
                             },
                             &mut ctx,
                         );
-                    }
-                }
-            });
-        }
-    }
-
-    #[cfg(feature = "async")]
-    pub fn spawn<C: Consumer>(&mut self, n_threads: usize, reader: C) {
-        for i in 0..n_threads {
-            let boxed = Box::new(reader);
-            let msg = self.msg_channel.1.clone();
-            let cmd = self.cmd_channel.0.clone();
-            let sentinel = self.sentinel.0.clone();
-            let max_attemps = self.max_attemps;
-            thread::spawn(move || {
-                let ctx = ContextAsync::new(cmd, sentinel);
-                loop {
-                    if let Ok(msg) = msg.recv() {
-                        LocalPool::new().run_until(boxed.handle(msg, ctx));
                     }
                 }
             });
