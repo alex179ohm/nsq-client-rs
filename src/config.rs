@@ -192,8 +192,8 @@ where
     ///     assert_eq!(config.client_id, Some("consumer".to_owned()));
     /// }
     /// ```
-    pub fn client_id(mut self, client_id: S) -> Self {
-        self.client_id = Some(client_id.into());
+    pub fn client_id(mut self, client_id: &str) -> Self {
+        self.client_id = Some(client_id.to_owned());
         self
     }
 
@@ -206,8 +206,8 @@ where
     ///     assert_eq!(config.hostname, Some("node-1".to_owned()));
     /// }
     /// ```
-    pub fn hostname(mut self, hostname: S) -> Self {
-        self.hostname = Some(hostname.into());
+    pub fn hostname(mut self, hostname: &str) -> Self {
+        self.hostname = Some(hostname.to_owned());
         self
     }
 
@@ -220,8 +220,8 @@ where
     ///     assert_eq!(config.user_agent, Some("consumer-1".to_owned()));
     /// }
     /// ```
-    pub fn user_agent(mut self, user_agent: S) -> Self {
-        self.user_agent = user_agent.into();
+    pub fn user_agent(mut self, user_agent: &str) -> Self {
+        self.user_agent = user_agent.to_owned();
         self
     }
 
