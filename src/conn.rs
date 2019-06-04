@@ -2,21 +2,24 @@ use crate::codec::{
     write_cmd, write_magic, write_mmsg, write_msg, Response, FRAME_TYPE_ERROR, FRAME_TYPE_MESSAGE,
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
-use crate::config::Config;
-use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION};
-use crate::tls::TlsSession;
-use backoff::{backoff::Backoff, ExponentialBackoff};
+use crate::config::{VerifyServerCert, NsqdConfig, Config, ConnConfig};
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, Nop};
+use crate::tls::rustls::TlsSession;
+//use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, Sender};
 use log::{debug, error, info};
-use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
+use mio::{net::TcpStream, Poll, PollOpt, Ready, Token, Evented, Event};
 use rustls::Session;
-use std::fmt::Display;
+//use std::fmt::Display;
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process;
-use std::thread;
+//use std::thread;
+
+#[cfg(feature = "nativetls")]
+use native_tls::{TlsConnector, TlsStream};
 
 pub const CONNECTION: Token = Token(0);
 
@@ -32,10 +35,7 @@ pub enum State {
 }
 
 #[derive(Debug)]
-pub struct Conn<S>
-where
-    S: Into<String> + Clone,
-{
+pub struct Conn {
     //writing buffer where commands are written.
     w_buf: BytesMut,
     //read buffer where data is decoded.
@@ -43,16 +43,14 @@ where
     //send message to readers.
     //s: Sender<Msg>,
     s: Sender<BytesMut>,
-    // tcp_stream
-    socket: TcpStream,
+    buffer_size: usize,
     //receive Cmd from readers.
     r: Receiver<Cmd>,
     //heartbeat
     pub heartbeat: bool,
     //responses
     pub responses: Vec<Response>,
-    //config
-    config: Config<S>,
+    server_name: String,
     //msgs in flight
     in_flight: u32,
     //tls_session
@@ -65,57 +63,32 @@ where
     pub state: State,
 }
 
-impl<S> Conn<S>
-where
-    S: Into<String> + Clone,
-{
+impl Conn {
 
-    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMut>) -> Conn<S>
+    pub fn new<ST>(
+        r: Receiver<Cmd>,
+        s: Sender<BytesMut>,
+        verify_server_cert: VerifyServerCert<ST>,
+        server_name: String,
+        buffer_size: usize,
+        ) -> Conn
     where
-        A: ToSocketAddrs + Into<String> + Display + Clone,
+        ST: Into<String> + Clone,
     {
-        let server_name: String = addr.clone().into();
-        let mut addrs = match addr.to_socket_addrs() {
-            Ok(addrs) => addrs,
-            Err(e) => {
-                error!("[{}] error on lookup: {}", addr, e);
-                process::exit(1);
-            }
-        };
-        let mut backoff = ExponentialBackoff::default();
-        let socket = loop {
-            let addr = addrs.next().expect("could not resove addr");
-            match connect(addr) {
-                Ok(stream) => {
-                    if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize)
-                    {
-                        panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
-                    }
-                    break stream;
-                }
-                Err(e) => {
-                    error!("[{}] error on connect to nsqd: {:?}", addr, e);
-                    if let Some(timeout) = backoff.next_backoff() {
-                        thread::sleep(timeout);
-                    }
-                }
-            }
-        };
-        let verify_server_cert = config.verify_server.clone();
+       let server_name = &server_name.split(':').map(|x| x.to_owned()).collect::<Vec<String>>()[0]; 
         Conn {
-            //addr: addr.clone(),
-            socket,
             r_buf: BytesMut::new(),
             w_buf: BytesMut::new(),
             r,
             s,
             heartbeat: false,
-            config,
             responses: Vec::new(),
             tls_sess: TlsSession::new(
-                server_name.split(':').collect::<Vec<&str>>()[0],
+                server_name.as_str(),
                 verify_server_cert,
             ),
+            server_name: server_name.to_owned(),
+            buffer_size,
             tls: false,
             in_flight: 0,
             now: std::time::Instant::now(),
@@ -125,13 +98,160 @@ where
         }
     }
 
+    pub fn ready<S, C, H>(
+        &mut self,
+        ev: Event,
+        poll: &mut Poll,
+        socket: &mut S,
+        config: Config<C>,
+        rdy: u32,
+        conn_config: ConnConfig<H>,
+        )
+    where
+        S: Read + Write + Evented,
+        C: Into<String> + Clone,
+        H: Into<String> + Clone,
+    {
+        let mut nsqd_config: NsqdConfig = NsqdConfig::default();
+        if ev.readiness().is_readable() {
+            match self.read(socket) {
+                Ok(0) => {
+                    if self.need_response {
+                        self.reregister(poll, socket, Ready::readable());
+                    }
+                    return;
+                }
+                Err(e) => {
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        panic!("Error on reading socket: {:?}", e);
+                    }
+                    return;
+                }
+                _ => {}
+            };
+            if self.state != State::Started {
+                match self.state {
+                    State::Identify => {
+                        let resp = self
+                            .get_response(format!(
+                                "[{}] failed to indentify",
+                                self.server_name
+                            ))
+                            .unwrap();
+                        nsqd_config = serde_json::from_str(&resp)
+                            .expect("failed to decode identify response");
+                        info!("[{}] configuration: {:#?}", self.server_name, nsqd_config);
+                        if nsqd_config.tls_v1 {
+                            self.tls_enabled(socket);
+                            self.reregister(poll, socket, Ready::readable());
+                            return;
+                        };
+                        if nsqd_config.auth_required {
+                            if conn_config.secret.is_none() {
+                                error!("[{}] authentication required", self.server_name);
+                                error!("secret token needed");
+                                process::exit(1)
+                            }
+                            self.state = State::Auth;
+                        } else {
+                            self.state = State::Subscribe;
+                        }
+                    }
+                    State::Tls => {
+                        let resp = self
+                            .get_response(format!(
+                                "[{}] tls handshake failed",
+                                self.server_name
+                            ))
+                            .unwrap();
+                        info!("[{}] tls connection: {}", self.server_name, resp);
+                        if nsqd_config.auth_required {
+                            if conn_config.secret.is_none() {
+                                error!("[{}] authentication required", self.server_name);
+                                error!("secret token needed");
+                                process::exit(1)
+                            }
+                            self.state = State::Auth;
+                        } else {
+                            self.state = State::Subscribe;
+                        }
+                    }
+                    State::Auth => {
+                        let resp = self
+                            .get_response(format!(
+                                "[{}] authentication failed",
+                                self.server_name
+                            ))
+                            .unwrap();
+                        info!("[{}] authentication {}", self.server_name, resp);
+                        self.state = State::Subscribe;
+                    }
+                    State::Subscribe => {
+                        let resp = self
+                            .get_response(format!(
+                                "[{}] authentication failed",
+                                self.server_name
+                            ))
+                            .unwrap();
+                        info!(
+                            "[{}] subscribe: {}",
+                            self.server_name, resp
+                        );
+                        self.state = State::Rdy;
+                    }
+                    _ => {}
+                }
+                self.need_response = false;
+            }
+            self.reregister(poll, socket, Ready::writable());
+        } else if self.state != State::Started {
+            match self.state {
+                State::Identify => {
+                    let config = serde_json::to_string(&config).unwrap();
+                    self.identify(config);
+                }
+                State::Auth => match &conn_config.secret {
+                    Some(s) => {
+                        let secret = s.clone();
+                        self.auth(secret.into());
+                    }
+                    None => {}
+                },
+                State::Subscribe => {
+                    self.subscribe(conn_config.topic, conn_config.channel);
+                }
+                State::Rdy => {
+                    self.rdy(rdy);
+                }
+                _ => {}
+            }
+            if let Err(e) = self.write(socket) {
+                error!("writing on socket: {:?}", e);
+            };
+            if self.need_response {
+                self.reregister(poll, socket, Ready::readable());
+            } else {
+                self.reregister(poll, socket, Ready::writable());
+            };
+        } else {
+            if self.heartbeat {
+                self.write_cmd(Nop);
+                if let Err(e) = self.write(socket) {
+                    error!("writing on socket: {:?}", e);
+                }
+                self.heartbeat_done();
+            }
+            self.write_messages(socket);
+            self.reregister(poll, socket, Ready::readable());
+        }
+    }
+
     pub fn magic(&mut self) {
         write_magic(&mut self.w_buf, VERSION);
         self.state = State::Identify;
     }
 
-    pub fn identify(&mut self) {
-        let config = serde_json::to_string(&self.config).unwrap();
+    pub fn identify(&mut self, config: String) {
         self.write_cmd(Identify(config).as_cmd());
         self.state = State::Identify;
         self.need_response = true;
@@ -155,26 +275,26 @@ where
         self.need_response = false;
     }
 
-    pub fn tls_enabled(&mut self) {
+    pub fn tls_enabled<S: Read + Write>(&mut self, socket: &mut S) {
         self.tls = true;
         debug!("tls enabled");
-        let _ = self.tls_sess.0.complete_io(&mut self.socket);
+        let _ = self.tls_sess.0.complete_io(socket);
         if self.tls_sess.0.wants_write() {
-            let _ = self.write_tls();
+            let _ = self.write_tls(socket);
         }
         if self.tls_sess.0.wants_read() {
-            let _ = self.read_tls();
+            let _ = self.read_tls(socket);
         }
         self.state = State::Tls;
     }
 
-    pub fn register(&mut self, poll: &mut Poll) {
-        poll.register(&self.socket, CONNECTION, Ready::writable(), PollOpt::edge())
+    pub fn register<S: Evented>(&mut self, poll: &mut Poll, socket: &S) {
+        poll.register(socket, CONNECTION, Ready::writable(), PollOpt::edge())
             .expect("cannot register socket on poll");
     }
 
-    pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
-        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge())
+    pub fn reregister<S: Evented>(&mut self, poll: &mut Poll, socket: &S, interest: Ready) {
+        poll.reregister(socket, CONNECTION, interest, PollOpt::edge())
             .expect("cannot reregister socket on poll")
     }
 
@@ -187,33 +307,35 @@ where
         self.heartbeat = false;
     }
 
-    pub fn read(&mut self) -> io::Result<usize> {
+    pub fn read<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
         if self.tls {
-            self.read_tls()
+            self.read_tls(socket)
         } else {
-            self.read_tcp()
+            self.read_tcp(socket)
         }
     }
 
-    pub fn write(&mut self) -> io::Result<usize> {
+    pub fn write<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
         if self.tls {
-            self.write_tls()
+            self.write_tls(socket)
         } else {
-            self.write_tcp()
+            self.write_tcp(socket)
         }
     }
 
-    pub fn write_messages(&mut self) {
+    pub fn write_messages<S: Read + Write>(&mut self, socket: &mut S) {
         let msgs: Vec<Cmd> = self.r.try_iter().collect();
         for msg in msgs {
             self.write_cmd(msg);
-            if let Err(e) = self.write() {
+            if let Err(e) = self.write(socket) {
                 error!("error writing msg on socket: {:?}", e);
             };
-            if let Err(e) = self.socket.flush() {
+            if let Err(e) = socket.flush() {
                 error!("error flushing socket: {:?}", e);
             };
-            self.in_flight -= 1;
+            if self.in_flight != 0 {
+                self.in_flight -= 1;
+            }
             self.processed += 1;
         }
         info!("inflight: {}", self.in_flight);
@@ -270,18 +392,18 @@ where
         }
     }
 
-    pub fn read_tls(&mut self) -> io::Result<usize> {
+    pub fn read_tls<S: Read + Write>(&mut self, mut socket: S) -> io::Result<usize> {
         if self.tls_sess.0.is_handshaking() {
-            self.tls_sess.0.complete_io(&mut self.socket)?;
+            self.tls_sess.0.complete_io(&mut socket)?;
         }
         if self.tls_sess.0.wants_write() {
-            self.tls_sess.0.complete_io(&mut self.socket)?;
+            self.tls_sess.0.complete_io(&mut socket)?;
         }
-        while self.tls_sess.0.wants_read() && self.tls_sess.0.complete_io(&mut self.socket)?.0 != 0
+        while self.tls_sess.0.wants_read() && self.tls_sess.0.complete_io(&mut socket)?.0 != 0
         {
         }
         let mut buf: Vec<u8> = Vec::new();
-        buf.resize(self.config.output_buffer_size as usize, 0);
+        buf.resize(self.buffer_size, 0);
         //let mut n: usize = 0;
         match self.tls_sess.0.read(&mut buf) {
             Ok(0) => Ok(0),
@@ -296,10 +418,10 @@ where
         }
     }
 
-    pub fn read_tcp(&mut self) -> io::Result<usize> {
+    pub fn read_tcp<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
         let mut buf: Vec<u8> = Vec::new();
-        buf.resize(self.config.output_buffer_size as usize, 0);
-        match self.socket.read(&mut buf) {
+        buf.resize(self.buffer_size, 0);
+        match socket.read(&mut buf) {
             Ok(0) => Ok(0),
             Ok(b) => {
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
@@ -316,7 +438,7 @@ where
         }
     }
 
-    pub fn write_cmd<C: NsqCmd>(&mut self, msg: C) {
+    pub fn write_cmd<CMD: NsqCmd>(&mut self, msg: CMD) {
         let msg = msg.as_cmd();
         debug!("{:?}", msg);
         write_cmd(&mut self.w_buf, &msg.cmd);
@@ -330,12 +452,12 @@ where
         write_mmsg(&mut self.w_buf, &msg.msg);
     }
 
-    pub fn write_tls(&mut self) -> io::Result<usize> {
+    pub fn write_tls<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
         if self.tls_sess.0.is_handshaking() {
-            self.tls_sess.0.complete_io(&mut self.socket)?;
+            self.tls_sess.0.complete_io(socket)?;
         }
         if self.tls_sess.0.wants_write() {
-            self.tls_sess.0.complete_io(&mut self.socket)?;
+            self.tls_sess.0.complete_io(socket)?;
         }
         let mut n: usize = 0;
         match self.tls_sess.0.write(self.w_buf.as_mut()) {
@@ -352,12 +474,12 @@ where
                 return Err(e);
             }
         }
-        let _ = self.tls_sess.0.complete_io(&mut self.socket);
+        let _ = self.tls_sess.0.complete_io(socket);
         Ok(n)
     }
 
-    pub fn write_tcp(&mut self) -> io::Result<usize> {
-        match self.socket.write(self.w_buf.as_ref()) {
+    pub fn write_tcp<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        match socket.write(self.w_buf.as_ref()) {
             Ok(0) => {
                 self.w_buf.clear();
                 Ok(0)

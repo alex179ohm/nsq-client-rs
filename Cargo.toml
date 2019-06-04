@@ -29,6 +29,9 @@ travis-ci = { repository = "alex179ohm/nsq-client-rs" }
 # tls = ["rustls", "webpki", "webpki-roots"]
 # async = ["futures-preview"]
 
+[features]
+nativetls = ["native-tls"]
+
 [dependencies]
 mio = "0.6"
 bytes = "0.4"
@@ -40,9 +43,10 @@ net2 = "0.2"
 byteorder = "1.3"
 backoff = "0.1"
 crossbeam = "0.7"
-rustls = {version = "0.15", features = ["default", "dangerous_configuration"]}
+rustls = {version = "0.15.2", features = ["default", "dangerous_configuration"]}
 webpki-roots = "0.16"
 webpki = "0.19"
-# webpki = { git = "https://github.com/alex179ohm/webpki", tag = "next", optional = true }
+# webpki = { git = "https://github.com/alex179ohm/webpki", branch = "master" }
 untrusted = "0.6.2"
+native-tls =  { version = "0.2", optional = true }
 # futures-preview = { version = "0.3.0-alpha.13", optional = true }

@@ -20,9 +20,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-
-pub trait Producer {
-    type Context;
-    fn started(&mut self, _ctx: &mut Self::Context) {}
-    fn publish(&mut self, ctx: &mut Self::Context);
+use crate::client::Context;
+pub trait Producer: Copy + Send + Sync + 'static {
+    fn send(&mut self, ctx: &mut Context);
 }

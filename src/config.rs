@@ -249,3 +249,26 @@ where
         VerifyServerCert::None
     }
 }
+
+#[derive(Clone)]
+pub struct ConnConfig<S>
+where
+    S: Into<String> + Clone,
+{
+    pub secret: Option<S>,
+    pub channel: String,
+    pub topic: String,
+}
+
+impl<S> ConnConfig<S>
+where
+    S: Into<String> + Clone,
+{
+    pub fn new(secret: Option<S>, channel: String, topic: String) -> ConnConfig<S> {
+        ConnConfig {
+            secret,
+            channel,
+            topic,
+        }
+    }
+}

@@ -5,12 +5,16 @@ use crate::msgs::Msg;
 use crate::msgs::Touch;
 #[cfg(feature = "async")]
 use std::future::Future;
+use log::warn;
 
 #[cfg(not(feature = "async"))]
 pub trait Consumer: Copy + Sync + Send + 'static {
     fn handle(&mut self, msg: Msg, ctx: &mut Context);
     fn on_max_attemps(&mut self, msg: Msg, ctx: &mut Context) {
         ctx.send(Touch(msg.id));
+    }
+    fn on_disconnected(&mut self) {
+        warn!("Connection closed by peer");
     }
 }
 

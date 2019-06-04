@@ -1,4 +1,4 @@
-#![feature(async_await)]
+#![feature(async_await, type_ascription)]
 extern crate bytes;
 extern crate log;
 extern crate mio;

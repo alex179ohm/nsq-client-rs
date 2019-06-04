@@ -5,6 +5,6 @@ authors = ["alex179ohm <alex179ohm@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-nsq-client = { path = "../../" }
+nsq-client = { path = "../../", features = ["nativetls"] }
 env_logger = "0.6"
 log = "0.4"
