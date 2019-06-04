@@ -15,8 +15,6 @@ use rustls::Session;
 //use std::fmt::Display;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::process;
-//use std::thread;
 
 #[cfg(feature = "nativetls")]
 use native_tls::{TlsConnector, TlsStream};
@@ -106,7 +104,7 @@ impl Conn {
         config: Config<C>,
         rdy: u32,
         conn_config: ConnConfig<H>,
-        )
+        ) -> io::Result<()>
     where
         S: Read + Write + Evented,
         C: Into<String> + Clone,
@@ -119,38 +117,39 @@ impl Conn {
                     if self.need_response {
                         self.reregister(poll, socket, Ready::readable());
                     }
-                    return;
+                    return Ok(());
                 }
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
-                        panic!("Error on reading socket: {:?}", e);
+                        return Err(e);
                     }
-                    return;
+                    return Ok(());
                 }
                 _ => {}
             };
             if self.state != State::Started {
                 match self.state {
                     State::Identify => {
-                        let resp = self
-                            .get_response(format!(
-                                "[{}] failed to indentify",
-                                self.server_name
-                            ))
-                            .unwrap();
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] failed to identify", self.server_name);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
                         nsqd_config = serde_json::from_str(&resp)
                             .expect("failed to decode identify response");
                         info!("[{}] configuration: {:#?}", self.server_name, nsqd_config);
                         if nsqd_config.tls_v1 {
                             self.tls_enabled(socket);
                             self.reregister(poll, socket, Ready::readable());
-                            return;
+                            return Ok(());
                         };
                         if nsqd_config.auth_required {
                             if conn_config.secret.is_none() {
                                 error!("[{}] authentication required", self.server_name);
                                 error!("secret token needed");
-                                process::exit(1)
+                                return Err(io::Error::new(io::ErrorKind::Other, "Secret token required"));
                             }
                             self.state = State::Auth;
                         } else {
@@ -158,18 +157,18 @@ impl Conn {
                         }
                     }
                     State::Tls => {
-                        let resp = self
-                            .get_response(format!(
-                                "[{}] tls handshake failed",
-                                self.server_name
-                            ))
-                            .unwrap();
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] {}", self.server_name, e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
                         info!("[{}] tls connection: {}", self.server_name, resp);
                         if nsqd_config.auth_required {
                             if conn_config.secret.is_none() {
                                 error!("[{}] authentication required", self.server_name);
-                                error!("secret token needed");
-                                process::exit(1)
+                                return Err(io::Error::new(io::ErrorKind::Other, "secret token required"));
                             }
                             self.state = State::Auth;
                         } else {
@@ -177,22 +176,24 @@ impl Conn {
                         }
                     }
                     State::Auth => {
-                        let resp = self
-                            .get_response(format!(
-                                "[{}] authentication failed",
-                                self.server_name
-                            ))
-                            .unwrap();
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] Authentication failed", self.server_name);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
                         info!("[{}] authentication {}", self.server_name, resp);
                         self.state = State::Subscribe;
                     }
                     State::Subscribe => {
-                        let resp = self
-                            .get_response(format!(
-                                "[{}] authentication failed",
-                                self.server_name
-                            ))
-                            .unwrap();
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] {}", self.server_name, e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
                         info!(
                             "[{}] subscribe: {}",
                             self.server_name, resp
@@ -238,12 +239,16 @@ impl Conn {
                 self.write_cmd(Nop);
                 if let Err(e) = self.write(socket) {
                     error!("writing on socket: {:?}", e);
+                    return Err(e);
                 }
                 self.heartbeat_done();
             }
-            self.write_messages(socket);
+            if let Err(e) = self.write_messages(socket) {
+                return Err(e);
+            }
             self.reregister(poll, socket, Ready::readable());
         }
+        Ok(())
     }
 
     pub fn magic(&mut self) {
@@ -298,9 +303,8 @@ impl Conn {
             .expect("cannot reregister socket on poll")
     }
 
-    pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
-        //self.poll_response();
-        get_response(self.responses.pop().unwrap(), on_err)
+    pub fn get_response(&mut self) -> io::Result<String> {
+        get_response(self.responses.pop().unwrap())
     }
 
     pub fn heartbeat_done(&mut self) {
@@ -323,15 +327,17 @@ impl Conn {
         }
     }
 
-    pub fn write_messages<S: Read + Write>(&mut self, socket: &mut S) {
+    pub fn write_messages<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<()> {
         let msgs: Vec<Cmd> = self.r.try_iter().collect();
         for msg in msgs {
             self.write_cmd(msg);
             if let Err(e) = self.write(socket) {
                 error!("error writing msg on socket: {:?}", e);
+                return Err(e);
             };
             if let Err(e) = socket.flush() {
                 error!("error flushing socket: {:?}", e);
+                return Err(e);
             };
             if self.in_flight != 0 {
                 self.in_flight -= 1;
@@ -344,6 +350,7 @@ impl Conn {
         //    info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
         //    std::process::exit(0);
         //}
+        Ok(())
     }
 
     pub fn decode(&mut self, size: usize) {
@@ -516,13 +523,12 @@ pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
     TcpStream::connect_stream(tcpstream, &addr)
 }
 
-pub fn get_response(resp: Response, expect: String) -> Result<String, ()> {
+pub fn get_response(resp: Response) -> io::Result<String> {
     match resp {
         Response::Response(r) => Ok(r),
         Response::Error(e) => {
-            error!("{}", expect);
             error!("error on response: {}", e);
-            Err(())
+            Err(io::Error::new(io::ErrorKind::Other, e))
         }
     }
 }

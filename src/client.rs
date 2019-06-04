@@ -3,12 +3,13 @@ use std::process;
 use std::thread;
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use mio::net::TcpStream;
 use std::fmt::Display;
 use std::convert::AsRef;
 
 use crossbeam::channel::{self, Receiver, Sender};
+use crossbeam::atomic::AtomicCell;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use log::{debug, error, info};
 
@@ -90,6 +91,7 @@ where
     cmd_channel: CmdChannel,
     conns: HashMap<u32, Sender<Cmd>>,
     sentinel: Sentinel,
+    is_connected: AtomicCell<bool>,
 }
 
 impl<C, S> Client<C, S>
@@ -118,10 +120,11 @@ where
             cmd_channel: CmdChannel::new(),
             conns: HashMap::new(),
             sentinel: Sentinel::new(),
+            is_connected: AtomicCell::new(false),
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> io::Result<()> {
         let (handler, set_readiness) = Registration::new2();
         let r_sentinel = self.sentinel.1.clone();
         thread::spawn(move || loop {
@@ -145,21 +148,26 @@ where
         conn.register(&mut poll, &socket);
         if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
             error!("registering handler");
-            panic!("{}", e);
+            return Err(io::Error::new(io::ErrorKind::Other, e));
         }
         conn.magic();
         let conn_config = ConnConfig::new(self.secret.clone(), self.channel.clone(), self.topic.clone());
         loop {
             if let Err(e) = poll.poll(&mut evts, None) {
                 error!("polling events failed");
-                panic!("{}", e);
+                return Err(io::Error::new(io::ErrorKind::Other, e));
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
                 if ev.token() == CONNECTION {
-                    conn.ready(ev, &mut poll, &mut socket, self.config.clone(), self.rdy, conn_config.clone());
-                } else {
-                    conn.write_messages(&mut socket);
+                    match conn.ready(ev, &mut poll, &mut socket, self.config.clone(), self.rdy, conn_config.clone()) {
+                        Ok(_) => continue,
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    }
+                } else if let Err(e) = conn.write_messages(&mut socket) {
+                    return Err(e);
                 }
             }
         }
