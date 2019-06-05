@@ -1,27 +1,4 @@
-// MIT License
-//
-// Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
-// Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// Configuration sent to nsqd to properly config the [Connection](struct.Connection.html)
 ///
@@ -45,7 +22,10 @@ use serde_derive::{Deserialize, Serialize};
 ///```
 ///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Config {
+pub struct Config<S>
+where
+    S: Into<String> + Clone,
+{
     /// Identifiers sent to nsqd representing this client (consumer specific)
     ///
     /// Default: **hostname** where connection is started
@@ -91,7 +71,7 @@ pub struct Config {
     /// Enable TLS negotiation
     ///
     /// Default: **false** (Not implemented)
-    pub tls_v1: bool,
+    tls_v1: bool,
 
     /// Enable snappy compression.
     ///
@@ -101,14 +81,14 @@ pub struct Config {
     /// Enable deflate compression.
     ///
     /// Default: **false** (Not implemented)
-    pub deflate: bool,
+    deflate: bool,
     /// Configure deflate compression level.
     ///
     /// Valid range:
     /// * 1 <= deflate_level <= configured_max
     ///
     /// Default: **6**
-    pub deflate_level: u16,
+    deflate_level: u16,
 
     /// Integer percentage to sample the channel.
     ///
@@ -126,11 +106,25 @@ pub struct Config {
     ///
     /// Default: **0**
     pub message_timeout: u32,
+
+    /// If None Server Cert verification is disasbled (don't use in production), if Some("") use
+    /// webpki mozilla ca list for verification, Some("private_ca_file") add private ca cert chain
+    /// for verify server cert.
+    ///
+    /// Default: Some("")
+    //#[serde(skip)]
+    //pub private_ca: String,
+
+    #[serde(skip)]
+    pub verify_server: VerifyServerCert<S>,
 }
 use hostname::get_hostname;
 
-impl Default for Config {
-    fn default() -> Config {
+impl<S> Default for Config<S>
+where
+    S: Into<String> + Clone,
+{
+    fn default() -> Config<S> {
         Config {
             client_id: get_hostname(),
             user_agent: String::from("nsq_client"),
@@ -139,17 +133,20 @@ impl Default for Config {
             deflate_level: 6,
             snappy: false,
             feature_negotiation: true,
+            //heartbeat_interval: 2000,
             heartbeat_interval: 30000,
             message_timeout: 0,
             output_buffer_size: 16384,
             output_buffer_timeout: 250,
             sample_rate: 0,
             tls_v1: false,
+            verify_server: VerifyServerCert::None,
+            //private_ca: String::new(),
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
 pub struct NsqdConfig {
     pub max_rdy_count: u32,
     pub version: String,
@@ -167,7 +164,10 @@ pub struct NsqdConfig {
 }
 
 #[allow(dead_code)]
-impl Config {
+impl<S> Config<S>
+where
+    S: Into<String> + Clone,
+{
     /// Create default [Config](struct.Config.html)
     /// ```no-run
     /// use nsq_client::{Config};
@@ -177,7 +177,7 @@ impl Config {
     ///     assert_eq!(config, Config::default());
     /// }
     /// ```
-    pub fn new() -> Config {
+    pub fn new() -> Config<S> {
         Config {
             ..Default::default()
         }
@@ -192,8 +192,8 @@ impl Config {
     ///     assert_eq!(config.client_id, Some("consumer".to_owned()));
     /// }
     /// ```
-    pub fn client_id<S: Into<String>>(mut self, client_id: S) -> Self {
-        self.client_id = Some(client_id.into());
+    pub fn client_id(mut self, client_id: &str) -> Self {
+        self.client_id = Some(client_id.to_owned());
         self
     }
 
@@ -206,8 +206,8 @@ impl Config {
     ///     assert_eq!(config.hostname, Some("node-1".to_owned()));
     /// }
     /// ```
-    pub fn hostname<S: Into<String>>(mut self, hostname: S) -> Self {
-        self.hostname = Some(hostname.into());
+    pub fn hostname(mut self, hostname: &str) -> Self {
+        self.hostname = Some(hostname.to_owned());
         self
     }
 
@@ -220,8 +220,55 @@ impl Config {
     ///     assert_eq!(config.user_agent, Some("consumer-1".to_owned()));
     /// }
     /// ```
-    pub fn user_agent<S: Into<String>>(mut self, user_agent: S) -> Self {
-        self.user_agent = user_agent.into();
+    pub fn user_agent(mut self, user_agent: &str) -> Self {
+        self.user_agent = user_agent.to_owned();
         self
+    }
+
+    pub fn tls(&mut self, verify_server_cert: VerifyServerCert<S>) {
+        self.tls_v1 = true;
+        self.verify_server = verify_server_cert;
+    }
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum VerifyServerCert<S>
+where
+    S: Into<String> + Clone,
+{
+    None,
+    PrivateCA(S),
+    PublicCA,
+}
+
+impl<S> Default for VerifyServerCert<S>
+where
+    S: Into<String> + Clone,
+{
+    fn default() -> Self {
+        VerifyServerCert::None
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnConfig<S>
+where
+    S: Into<String> + Clone,
+{
+    pub secret: Option<S>,
+    pub channel: String,
+    pub topic: String,
+}
+
+impl<S> ConnConfig<S>
+where
+    S: Into<String> + Clone,
+{
+    pub fn new(secret: Option<S>, channel: String, topic: String) -> ConnConfig<S> {
+        ConnConfig {
+            secret,
+            channel,
+            topic,
+        }
     }
 }

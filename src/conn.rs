@@ -1,612 +1,534 @@
-// MIT License
-//
-// Copyright (c) 2019-2021 Alessandro Cresto Miseroglio <alex179ohm@gmail.com>
-// Copyright (c) 2019-2021 Tangram Technologies S.R.L. <https://tngrm.io>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-use std::any::{Any, TypeId};
-use std::io;
-use std::net::ToSocketAddrs;
-
-use actix::prelude::*;
-use backoff::backoff::Backoff as TcpBackoff;
-use backoff::ExponentialBackoff;
-use fnv::FnvHashMap;
-use futures::stream::once;
-use log::{error, info, warn};
-use serde_json;
-use tokio::codec::FramedRead;
-use tokio::io::{WriteHalf, AsyncRead};
-use tokio::net::TcpStream;
-
-use crate::auth::AuthResp;
-use crate::codec::{Cmd, NsqCodec};
-use crate::commands::{auth, fin, identify, nop, rdy, sub, req, VERSION};
-use crate::config::{Config, NsqdConfig};
-use crate::error::Error;
-use crate::msgs::{
-    AddHandler, Auth, Backoff, Cls, Fin, Msg, NsqMsg, OnAuth, OnBackoff, OnClose,
-    OnIdentify, OnResume, Ready, Resume, Sub, Requeue,
+use crate::codec::{
+    write_cmd, write_magic, write_mmsg, write_msg, Response, FRAME_TYPE_ERROR, FRAME_TYPE_MESSAGE,
+    FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
-use crate::tcp::TcpConnector;
+use crate::config::{VerifyServerCert, NsqdConfig, Config, ConnConfig};
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, Nop};
+use crate::tls::rustls::TlsSession;
+//use backoff::{backoff::Backoff, ExponentialBackoff};
+use byteorder::{BigEndian, ByteOrder};
+use bytes::BytesMut;
+use crossbeam::channel::{Receiver, Sender};
+use log::{debug, error, info};
+use mio::{net::TcpStream, Poll, PollOpt, Ready, Token, Evented, Event};
+use rustls::Session;
+//use std::fmt::Display;
+use std::io::{self, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-#[derive(Message)]
-pub struct SendMsg;
+#[cfg(feature = "nativetls")]
+use native_tls::{TlsConnector, TlsStream};
+
+pub const CONNECTION: Token = Token(0);
 
 #[derive(Debug, PartialEq)]
-pub enum ConnState {
-    Neg,
+pub enum State {
+    Start,
+    Identify,
+    Tls,
     Auth,
-    Sub,
-    Ready,
+    Subscribe,
+    Rdy,
     Started,
-    Backoff,
-    Resume,
-    Closing,
-    Stopped,
+} 
+
+#[derive(Debug)]
+pub struct Conn {
+    //writing buffer where commands are written.
+    w_buf: BytesMut,
+    //read buffer where data is decoded.
+    r_buf: BytesMut,
+    //send message to readers.
+    //s: Sender<Msg>,
+    s: Sender<BytesMut>,
+    buffer_size: usize,
+    //receive Cmd from readers.
+    r: Receiver<Cmd>,
+    //heartbeat
+    pub heartbeat: bool,
+    //responses
+    pub responses: Vec<Response>,
+    server_name: String,
+    //msgs in flight
+    in_flight: u32,
+    //tls_session
+    tls_sess: TlsSession,
+    //tls connection enabled/disabled (needed because we not start chatting on encrypted connection)
+    tls: bool,
+    now: std::time::Instant,
+    processed: u32,
+    pub need_response: bool,
+    pub state: State,
 }
 
-/// Tcp Connection to NSQ system.
-///
-/// Tries to connect to nsqd early as started:
-///
-/// # Examples
-/// ```no-run
-/// use actix::prelude::*;
-/// use nsq_client::Connection;
-///
-/// fn main() {
-///     let sys = System::new("consumer");
-///     Supervisor::start(|_| Connection::new(
-///         "test", // <- topic
-///         "test", // <- channel
-///         "0.0.0.0:4150", // <- nsqd tcp address
-///         None, // <- config (Optional)
-///         None, // <- secret used by Auth (Optional)
-///         Some(1) // <- Initial RDY setting for the Connection
-///     ));
-///     sys.run();
-/// }
-/// ```
-pub struct Connection {
-    msgs: Vec<(i64, u16, String, Vec<u8>)>,
-    addr: String,
-    handlers: Vec<Box<Any>>,
-    handlers_busy: FnvHashMap<String, Box<Any>>,
-    info_hashmap: FnvHashMap<TypeId, Box<Any>>,
-    topic: String,
-    channel: String,
-    config: Config,
-    secret: String,
-    tcp_backoff: ExponentialBackoff,
-    backoff: ExponentialBackoff,
-    cell: Option<actix::io::FramedWrite<WriteHalf<TcpStream>, NsqCodec>>,
-    state: ConnState,
-    rdy: u32,
-    handler_ready: usize,
-}
+impl Conn {
 
-impl Default for Connection {
-    fn default() -> Connection {
-        Connection {
-            msgs: Vec::new(),
-            handlers: Vec::new(),
-            handlers_busy: FnvHashMap::default(),
-            info_hashmap: FnvHashMap::default(),
-            topic: String::new(),
-            channel: String::new(),
-            config: Config::default(),
-            secret: String::new(),
-            tcp_backoff: ExponentialBackoff::default(),
-            backoff: ExponentialBackoff::default(),
-            cell: None,
-            state: ConnState::Neg,
-            addr: String::new(),
-            rdy: 1,
-            handler_ready: 0,
+    pub fn new<ST>(
+        r: Receiver<Cmd>,
+        s: Sender<BytesMut>,
+        verify_server_cert: VerifyServerCert<ST>,
+        server_name: String,
+        buffer_size: usize,
+        ) -> Conn
+    where
+        ST: Into<String> + Clone,
+    {
+       let server_name = &server_name.split(':').map(|x| x.to_owned()).collect::<Vec<String>>()[0]; 
+        Conn {
+            r_buf: BytesMut::new(),
+            w_buf: BytesMut::new(),
+            r,
+            s,
+            heartbeat: false,
+            responses: Vec::new(),
+            tls_sess: TlsSession::new(
+                server_name.as_str(),
+                verify_server_cert,
+            ),
+            server_name: server_name.to_owned(),
+            buffer_size,
+            tls: false,
+            in_flight: 0,
+            now: std::time::Instant::now(),
+            processed: 0,
+            need_response: false,
+            state: State::Start,
         }
     }
-}
 
-impl Connection {
-    /// Return a Tcp Connection to nsqd.
-    ///
-    /// * `topic`    - Topic String
-    /// * `channel`  - Channel String
-    /// * `addr`     - Tcp address of nsqd
-    /// * `config`   - Optional [`Config`]
-    /// * `secret`   - Optional String used to autenticate to nsqd
-    /// * `rdy`      - Optional initial RDY setting
-    pub fn new<S: Into<String>>(
-        topic: S,
-        channel: S,
-        addr: S,
-        config: Option<Config>,
-        secret: Option<String>,
-        rdy: Option<u32>,
-    ) -> Connection {
-        let mut tcp_backoff = ExponentialBackoff::default();
-        let backoff = ExponentialBackoff::default();
-        let cfg = match config {
-            Some(cfg) => cfg,
-            None => Config::default(),
-        };
-        let mut scrt = String::new();
-        if let Some(sec) = secret {
-            scrt = sec;
-        }
-        let rdy = match rdy {
-            Some(r) => r,
-            None => 1,
-        };
-        tcp_backoff.max_elapsed_time = None;
-        Connection {
-            msgs: Vec::new(),
-            config: cfg,
-            secret: scrt,
-            tcp_backoff,
-            backoff,
-            cell: None,
-            topic: topic.into(),
-            channel: channel.into(),
-            state: ConnState::Neg,
-            handlers: Vec::new(),
-            handlers_busy: FnvHashMap::default(),
-            info_hashmap: FnvHashMap::default(),
-            addr: addr.into(),
-            rdy,
-            handler_ready: 0,
-        }
-    }
-}
-
-impl Connection {
-    fn info_on_auth(&self, resp: AuthResp) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnAuth>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnAuth>>() {
-                match handler.do_send(OnAuth(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnAuth: {}", e);
+    pub fn ready<S, C, H>(
+        &mut self,
+        ev: Event,
+        poll: &mut Poll,
+        socket: &mut S,
+        config: Config<C>,
+        rdy: u32,
+        conn_config: ConnConfig<H>,
+        ) -> io::Result<()>
+    where
+        S: Read + Write + Evented,
+        C: Into<String> + Clone,
+        H: Into<String> + Clone,
+    {
+        let mut nsqd_config: NsqdConfig = NsqdConfig::default();
+        if ev.readiness().is_readable() {
+            match self.read(socket) {
+                Ok(0) => {
+                    if self.need_response {
+                        self.reregister(poll, socket, Ready::readable());
                     }
+                    return Ok(());
                 }
-            }
-        }
-    }
-
-    fn info_on_identify(&self, resp: NsqdConfig) {
-        if let Some(box_handler) = self
-            .info_hashmap
-            .get(&TypeId::of::<Recipient<OnIdentify>>())
-        {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnIdentify>>() {
-                match handler.do_send(OnIdentify(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnIdentify: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_close(&self, resp: bool) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnClose>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnClose>>() {
-                match handler.do_send(OnClose(resp)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnClose: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_backoff(&self) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnBackoff>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnBackoff>>() {
-                match handler.do_send(OnBackoff) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnBackoff: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn info_on_resume(&self) {
-        if let Some(box_handler) = self.info_hashmap.get(&TypeId::of::<Recipient<OnResume>>()) {
-            if let Some(handler) = box_handler.downcast_ref::<Recipient<OnResume>>() {
-                match handler.do_send(OnResume) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("sending OnBackoff: {}", e);
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl Actor for Connection {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Context<Self>) {
-        info!("trying to connect [{}]", self.addr);
-        let addrs = self.addr.to_socket_addrs().unwrap();
-        TcpConnector::new(addrs).map(|stream, act, ctx| {
-            info!("connected: {:?}", stream);
-            let (r, w) = stream.split();
-            let mut framed = actix::io::FramedWrite::new(w, NsqCodec{ msgs: Vec::new() }, ctx);
-            let rx = FramedRead::new(r, NsqCodec{ msgs: Vec::new() });
-            framed.write(Cmd::Magic(VERSION));
-            let json = match serde_json::to_string(&act.config) {
-                Ok(s) => s,
                 Err(e) => {
-                    error!("config cannot be formatted as json string: {}", e);
-                    return ctx.stop();
-                }
-            };
-            ctx.add_stream(rx);
-            framed.write(identify(json));
-            act.cell = Some(framed);
-
-            act.backoff.reset();
-            act.state = ConnState::Neg;
-            act.handler_ready = act.handlers.len();
-        }).map_err(|e, act, ctx| {
-            error!("error connect [{}]: {}", act.addr, e);
-            if let Some(timeout) = act.tcp_backoff.next_backoff() {
-                ctx.run_later(timeout, |_, ctx| ctx.stop());
-            }
-        }).wait(ctx);
-    }
-}
-
-impl actix::io::WriteHandler<io::Error> for Connection {
-    fn error(&mut self, err: io::Error, _: &mut Self::Context) -> Running {
-        error!("Nsqd connection dropped: {}", err);
-        Running::Stop
-    }
-}
-
-// TODO: implement error
-impl StreamHandler<Vec<Cmd>, Error> for Connection {
-    fn finished(&mut self, ctx: &mut Self::Context) {
-        error!("Nsqd connection dropped");
-        ctx.stop();
-    }
-
-    fn error(&mut self, err: Error, _ctx: &mut Self::Context) -> Running {
-        error!("Something goes wrong decoding message: {}", err);
-        Running::Stop
-    }
-
-    fn handle(&mut self, msgs: Vec<Cmd>, ctx: &mut Self::Context) {
-        info!("msg: {:?}", msgs);
-        for msg in msgs {
-            match msg {
-                Cmd::Heartbeat => {
-                    if let Some(ref mut cell) = self.cell {
-                        cell.write(nop());
-                    } else {
-                        error!("Nsqd connection dropped. trying reconnecting");
-                        ctx.stop();
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        return Err(e);
                     }
+                    return Ok(());
                 }
-                Cmd::Response(s) => match self.state {
-                    ConnState::Neg => {
-                        info!("trying negotiation [{}]", self.addr);
-                        let config: NsqdConfig = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => s,
-                            Err(err) => {
-                                error!("Negotiating json response invalid: {:?}", err);
-                                return ctx.stop();
+                _ => {}
+            };
+            if self.state != State::Started {
+                match self.state {
+                    State::Identify => {
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] failed to identify", self.server_name);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
                             }
                         };
-                        info!("configuration [{}] {:#?}", self.addr, config);
-                        self.info_on_identify(config.clone());
-                        if config.auth_required {
-                            info!("trying authentication [{}]", self.addr);
-                            ctx.notify(Auth);
+                        nsqd_config = serde_json::from_str(&resp)
+                            .expect("failed to decode identify response");
+                        info!("[{}] configuration: {:#?}", self.server_name, nsqd_config);
+                        if nsqd_config.tls_v1 {
+                            self.tls_enabled(socket);
+                            self.reregister(poll, socket, Ready::readable());
+                            return Ok(());
+                        };
+                        if nsqd_config.auth_required {
+                            if conn_config.secret.is_none() {
+                                error!("[{}] authentication required", self.server_name);
+                                error!("secret token needed");
+                                return Err(io::Error::new(io::ErrorKind::Other, "Secret token required"));
+                            }
+                            self.state = State::Auth;
                         } else {
-                            info!(
-                                "subscribing [{}] topic: {} channel: {}",
-                                self.addr, self.topic, self.channel
-                            );
-                            ctx.notify(Sub);
+                            self.state = State::Subscribe;
                         }
                     }
-                    ConnState::Auth => {
-                        let auth_resp: AuthResp = match serde_json::from_str(s.as_str()) {
-                            Ok(s) => s,
-                            Err(err) => {
-                                error!("Auth json response invalid: {:?}", err);
-                                return ctx.stop();
+                    State::Tls => {
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] {}", self.server_name, e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
                             }
                         };
-                        info!("authenticated [{}] {:#?}", self.addr, auth_resp);
-                        self.info_on_auth(auth_resp);
-                        ctx.notify(Sub);
+                        info!("[{}] tls connection: {}", self.server_name, resp);
+                        if nsqd_config.auth_required {
+                            if conn_config.secret.is_none() {
+                                error!("[{}] authentication required", self.server_name);
+                                return Err(io::Error::new(io::ErrorKind::Other, "secret token required"));
+                            }
+                            self.state = State::Auth;
+                        } else {
+                            self.state = State::Subscribe;
+                        }
                     }
-                    ConnState::Sub => {
-                        ctx.notify(Sub);
+                    State::Auth => {
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] Authentication failed", self.server_name);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
+                        info!("[{}] authentication {}", self.server_name, resp);
+                        self.state = State::Subscribe;
                     }
-                    ConnState::Ready => {
-                        ctx.notify(Ready(self.rdy));
-                    }
-                    ConnState::Closing => {
-                        self.info_on_close(true);
-                        self.state = ConnState::Stopped;
+                    State::Subscribe => {
+                        let resp = match self.get_response() {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("[{}] {}", self.server_name, e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
+                        info!(
+                            "[{}] subscribe: {}",
+                            self.server_name, resp
+                        );
+                        self.state = State::Rdy;
                     }
                     _ => {}
+                }
+                self.need_response = false;
+            }
+            self.reregister(poll, socket, Ready::writable());
+        } else if self.state != State::Started {
+            match self.state {
+                State::Identify => {
+                    let config = serde_json::to_string(&config).unwrap();
+                    self.identify(config);
+                }
+                State::Auth => match &conn_config.secret {
+                    Some(s) => {
+                        let secret = s.clone();
+                        self.auth(secret.into());
+                    }
+                    None => {}
                 },
-                // TODO: implement msg_queue and tumable RDY for fast processing multiple msgs
-                Cmd::ResponseMsg(timestamp, attemps, id, body) => {
-                    self.msgs.push((timestamp, attemps, id, body));
-                    //println!("send msgs");
-                    ctx.notify(SendMsg);
+                State::Subscribe => {
+                    self.subscribe(conn_config.topic, conn_config.channel);
                 }
-                Cmd::ResponseError(s) => {
-                    if self.state == ConnState::Closing {
-                        error!("Closing connection: {}", s);
-                        self.info_on_close(false);
-                        self.state = ConnState::Started;
-                    }
-                    warn!("failed: {}", s);
-                }
-                Cmd::Command(_) => {
-                    if let Some(ref mut cell) = self.cell {
-                        cell.write(rdy(1));
-                    }
+                State::Rdy => {
+                    self.rdy(rdy);
                 }
                 _ => {}
             }
+            if let Err(e) = self.write(socket) {
+                error!("writing on socket: {:?}", e);
+            };
+            if self.need_response {
+                self.reregister(poll, socket, Ready::readable());
+            } else {
+                self.reregister(poll, socket, Ready::writable());
+            };
+        } else {
+            if self.heartbeat {
+                self.write_cmd(Nop);
+                if let Err(e) = self.write(socket) {
+                    error!("writing on socket: {:?}", e);
+                    return Err(e);
+                }
+                self.heartbeat_done();
+            }
+            if let Err(e) = self.write_messages(socket) {
+                return Err(e);
+            }
+            self.reregister(poll, socket, Ready::readable());
+        }
+        Ok(())
+    }
+
+    pub fn magic(&mut self) {
+        write_magic(&mut self.w_buf, VERSION);
+        self.state = State::Identify;
+    }
+
+    pub fn identify(&mut self, config: String) {
+        self.write_cmd(Identify(config).as_cmd());
+        self.state = State::Identify;
+        self.need_response = true;
+    }
+
+    pub fn auth(&mut self, secret: String) {
+        self.write_cmd(Auth(secret));
+        self.state = State::Auth;
+        self.need_response = true;
+    }
+
+    pub fn subscribe(&mut self, topic: String, channel: String) {
+        self.write_cmd(Subscribe(topic, channel));
+        self.state = State::Subscribe;
+        self.need_response = true;
+    }
+
+    pub fn rdy(&mut self, rdy: u32) {
+        self.write_cmd(Rdy(rdy));
+        self.state = State::Started;
+        self.need_response = false;
+    }
+
+    pub fn tls_enabled<S: Read + Write>(&mut self, socket: &mut S) {
+        self.tls = true;
+        debug!("tls enabled");
+        let _ = self.tls_sess.0.complete_io(socket);
+        if self.tls_sess.0.wants_write() {
+            let _ = self.write_tls(socket);
+        }
+        if self.tls_sess.0.wants_read() {
+            let _ = self.read_tls(socket);
+        }
+        self.state = State::Tls;
+    }
+
+    pub fn register<S: Evented>(&mut self, poll: &mut Poll, socket: &S) {
+        poll.register(socket, CONNECTION, Ready::writable(), PollOpt::edge())
+            .expect("cannot register socket on poll");
+    }
+
+    pub fn reregister<S: Evented>(&mut self, poll: &mut Poll, socket: &S, interest: Ready) {
+        poll.reregister(socket, CONNECTION, interest, PollOpt::edge())
+            .expect("cannot reregister socket on poll")
+    }
+
+    pub fn get_response(&mut self) -> io::Result<String> {
+        get_response(self.responses.pop().unwrap())
+    }
+
+    pub fn heartbeat_done(&mut self) {
+        self.heartbeat = false;
+    }
+
+    pub fn read<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        if self.tls {
+            self.read_tls(socket)
+        } else {
+            self.read_tcp(socket)
         }
     }
-}
 
-impl Handler<SendMsg> for Connection {
-     type Result = ();
-     fn handle(&mut self, _msg: SendMsg, _ctx: &mut Self::Context) {
-        info!("handlers: {:?}", self.handlers);
-        info!("busy: {:?}", self.handlers_busy);
-        info!("msgs: {:?}", self.msgs);
-        let len = self.handlers.len();
-        info!("handlers len: {}", len);
-        if len == 0 {
-            return;
+    pub fn write<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        if self.tls {
+            self.write_tls(socket)
+        } else {
+            self.write_tcp(socket)
         }
-        let mut sent = false;
-        if let Some(handler) = self.handlers.get(len - 1) {
-            if let Some(rec) = handler.downcast_ref::<Recipient<Msg>>() {
-                if let Some((timestamp, attemps, id, body)) = self.msgs.pop() {
-                    let id_cloned = id.clone();
-                    let rec_cloned = rec.clone();
-                    let _ = rec.do_send(Msg {
-                        timestamp,
-                        attemps,
-                        id,
-                        body,
-                    });
-                    self.handlers_busy.insert(id_cloned, Box::new(rec_cloned));
-                    sent = true;
+    }
+
+    pub fn write_messages<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<()> {
+        let msgs: Vec<Cmd> = self.r.try_iter().collect();
+        for msg in msgs {
+            self.write_cmd(msg);
+            if let Err(e) = self.write(socket) {
+                error!("error writing msg on socket: {:?}", e);
+                return Err(e);
+            };
+            if let Err(e) = socket.flush() {
+                error!("error flushing socket: {:?}", e);
+                return Err(e);
+            };
+            if self.in_flight != 0 {
+                self.in_flight -= 1;
+            }
+            self.processed += 1;
+        }
+        info!("inflight: {}", self.in_flight);
+        info!("processed {}", self.processed);
+        //if self.processed == 2000 {
+        //    info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
+        //    std::process::exit(0);
+        //}
+        Ok(())
+    }
+
+    pub fn decode(&mut self, size: usize) {
+        loop {
+            //buffer totally consumed
+            if self.r_buf.is_empty() {
+                return;
+            }
+            //readed socket bytes are not enought
+            if size < HEADER_LENGTH {
+                return;
+            }
+            let buf_len = self.r_buf.len();
+            if buf_len < HEADER_LENGTH {
+                return;
+            }
+            //read and check the frame size.
+            let frame_size = BigEndian::read_i32(&self.r_buf.as_ref()[..4]) as usize;
+            if size < frame_size {
+                return;
+            }
+            if buf_len < frame_size {
+                return;
+            }
+            //there is no more bytes to read for socket, split size and start decoding frame.
+            let _ = self.r_buf.split_to(4);
+            let frame_type = BigEndian::read_i32(&self.r_buf.split_to(4));
+            //take the whole frame for buffer.
+            let frame = self.r_buf.split_to(frame_size - 4);
+            if frame_type == FRAME_TYPE_MESSAGE {
+                let _ = self.s.send(frame);
+                self.in_flight += 1;
+                continue;
+            } else {
+                let s = std::str::from_utf8(frame.as_ref()).unwrap();
+                if s == HEARTBEAT {
+                    self.heartbeat = true;
+                    continue;
+                }
+                if frame_type == FRAME_TYPE_RESPONSE {
+                    self.responses.push(Response::Response(s.to_owned()));
+                } else if frame_type == FRAME_TYPE_ERROR {
+                    self.responses.push(Response::Error(s.to_owned()));
                 }
             }
         }
-        if sent {
-            let _ = self.handlers.pop();
-        }
-     }
-}
-
-impl Handler<Cls> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Cls, ctx: &mut Self::Context) {
-        self.state = ConnState::Closing;
-        ctx.stop();
     }
-}
 
-impl Handler<Fin> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: Fin, ctx: &mut Self::Context) {
-        // discard the in_flight messages
-        let id = msg.0.clone();
-        if let Some(ref mut cell) = self.cell {
-            cell.write(fin(&msg.0));
+    pub fn read_tls<S: Read + Write>(&mut self, mut socket: S) -> io::Result<usize> {
+        if self.tls_sess.0.is_handshaking() {
+            self.tls_sess.0.complete_io(&mut socket)?;
         }
-        if let Some(r) = self.handlers_busy.remove(&id) {
-            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
-            self.handlers.push(Box::new(rec.clone()));
-            if !self.msgs.is_empty() {
-                ctx.notify(SendMsg);
+        if self.tls_sess.0.wants_write() {
+            self.tls_sess.0.complete_io(&mut socket)?;
+        }
+        while self.tls_sess.0.wants_read() && self.tls_sess.0.complete_io(&mut socket)?.0 != 0
+        {
+        }
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(self.buffer_size, 0);
+        //let mut n: usize = 0;
+        match self.tls_sess.0.read(&mut buf) {
+            Ok(0) => Ok(0),
+            Ok(b) => {
+                debug!("read: {}", b);
+                self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                self.decode(b);
+                //buf.clear();
+                Ok(b)
             }
-        }
-        if self.state == ConnState::Resume {
-            ctx.notify(Ready(self.rdy));
-            self.state = ConnState::Started;
+            Err(e) => Err(e),
         }
     }
-}
 
-impl Handler<Requeue> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: Requeue, ctx: &mut Self::Context) {
-        // discard the in_flight messages
-        let id = msg.0.clone();
-        if let Some(ref mut cell) = self.cell {
-            if msg.1 != 0 {
-                cell.write(req(&msg.0, Some(msg.1)));
-            } else {
-                cell.write(req(&msg.0, None));
+    pub fn read_tcp<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.resize(self.buffer_size, 0);
+        match socket.read(&mut buf) {
+            Ok(0) => Ok(0),
+            Ok(b) => {
+                self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                self.decode(b);
+                //buf.clear();
+                Ok(b)
             }
-        }
-        if let Some(r) = self.handlers_busy.remove(&id) {
-            let rec = r.downcast_ref::<Recipient<Msg>>().unwrap();
-            self.handlers.push(Box::new(rec.clone()));
-            if !self.msgs.is_empty() {
-                ctx.notify(SendMsg);
+            Err(e) => {
+                //if e.kind() == io::ErrorKind::WouldBlock {
+                //    return Ok(n);
+                //}
+                Err(e)
             }
-        }
-        if self.state == ConnState::Resume {
-            ctx.notify(Ready(self.rdy));
-            self.state = ConnState::Started;
         }
     }
-}
 
-impl Handler<Ready> for Connection {
-    type Result = ();
-
-    fn handle(&mut self, msg: Ready, _ctx: &mut Self::Context) {
-        if self.state != ConnState::Ready {
-            self.rdy = msg.0;
+    pub fn write_cmd<CMD: NsqCmd>(&mut self, msg: CMD) {
+        let msg = msg.as_cmd();
+        debug!("{:?}", msg);
+        write_cmd(&mut self.w_buf, &msg.cmd);
+        if msg.msg.is_empty() {
             return;
         }
-        if let Some(ref mut cell) = self.cell {
-            cell.write(rdy(msg.0));
+        if msg.msg.len() == 1 {
+            write_msg(&mut self.w_buf, &msg.msg[0]);
+            return;
         }
-        if self.state == ConnState::Started {
-            self.rdy = msg.0;
-            info!("rdy updated [{}]", self.addr);
-        } else {
-            self.state = ConnState::Started;
-            info!("Ready to go [{}] RDY: {}", self.addr, msg.0);
-        }
+        write_mmsg(&mut self.w_buf, &msg.msg);
     }
-}
 
-impl Handler<Auth> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Auth, ctx: &mut Self::Context) {
-        info!("I'm on auth handler");
-        if let Some(ref mut cell) = self.cell {
-            println!("trying to write");
-            cell.write(auth(self.secret.clone()));
-            println!("Writed!");
-        } else {
-            error!("unable to identify: connection dropped [{}]", self.addr);
-            ctx.stop();
+    pub fn write_tls<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        if self.tls_sess.0.is_handshaking() {
+            self.tls_sess.0.complete_io(socket)?;
         }
-        self.state = ConnState::Auth;
-    }
-}
-
-impl Handler<Sub> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Sub, ctx: &mut Self::Context) {
-        if let Some(ref mut cell) = self.cell {
-            cell.write(sub(&self.topic, &self.channel));
-        } else {
-            error!("unable to subscribing: connection dropped [{}]", self.addr);
-            ctx.stop();
+        if self.tls_sess.0.wants_write() {
+            self.tls_sess.0.complete_io(socket)?;
         }
-        self.state = ConnState::Ready;
-        info!(
-            "subscribed [{}] topic: {} channel: {}",
-            self.addr, self.topic, self.channel
-        );
-    }
-}
-
-impl Handler<Backoff> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Backoff, ctx: &mut Self::Context) {
-        if let Some(timeout) = self.backoff.next_backoff() {
-            if let Some(ref mut cell) = self.cell {
-                cell.write(rdy(0));
-                ctx.run_later(timeout, |_, ctx| ctx.notify(Resume));
-                self.state = ConnState::Backoff;
-            } else {
-                error!("backoff failed: connection dropped [{}]", self.addr);
-                Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
+        let mut n: usize = 0;
+        match self.tls_sess.0.write(self.w_buf.as_mut()) {
+            Ok(0) => {
+                self.w_buf.clear();
             }
-            self.info_on_backoff();
+            Ok(b) => {
+                self.w_buf.clear();
+                n = b;
+            }
+            Err(e) => {
+                error!("writing on tls socket");
+                self.w_buf.clear();
+                return Err(e);
+            }
+        }
+        let _ = self.tls_sess.0.complete_io(socket);
+        Ok(n)
+    }
+
+    pub fn write_tcp<S: Read + Write>(&mut self, socket: &mut S) -> io::Result<usize> {
+        match socket.write(self.w_buf.as_ref()) {
+            Ok(0) => {
+                self.w_buf.clear();
+                Ok(0)
+            }
+            Ok(n) => {
+                self.w_buf.clear();
+                Ok(n)
+            }
+            Err(e) => {
+                self.w_buf.clear();
+                Err(e)
+            }
         }
     }
 }
 
-impl Handler<Resume> for Connection {
-    type Result = ();
-    fn handle(&mut self, _msg: Resume, ctx: &mut Self::Context) {
-        if let Some(ref mut cell) = self.cell {
-            cell.write(rdy(1));
-            self.state = ConnState::Resume;
-        } else {
-            error!("resume failed: connection dropped [{}]", self.addr);
-            Self::add_stream(once::<Vec<Cmd>, Error>(Err(Error::NotConnected)), ctx);
-        }
-        self.info_on_resume();
-    }
+pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
+    let tcpstream = if cfg!(windows) {
+        let tcp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
+        debug!("{:?}", tcp_addr);
+        net2::TcpBuilder::new_v4()
+            .unwrap()
+            .bind(tcp_addr)
+            .expect("failed to create and bind tcp stream")
+            .to_tcp_stream()
+            .unwrap()
+    } else {
+        net2::TcpBuilder::new_v4()
+            .expect("failed to create tcp stream")
+            .to_tcp_stream()
+            .unwrap()
+    };
+    info!("[{}] trying to connect to nsqd server", addr);
+    TcpStream::connect_stream(tcpstream, &addr)
 }
 
-impl<M: NsqMsg> Handler<AddHandler<M>> for Connection {
-    type Result = ();
-    fn handle(&mut self, msg: AddHandler<M>, _: &mut Self::Context) {
-        let msg_id = TypeId::of::<Recipient<M>>();
-        if msg_id == TypeId::of::<Recipient<Msg>>() {
-            self.handlers.push(Box::new(msg.0));
-            info!("Reader added");
-        } else {
-            self.info_hashmap.insert(msg_id, Box::new(msg.0));
-            info!("info handler added");
+pub fn get_response(resp: Response) -> io::Result<String> {
+    match resp {
+        Response::Response(r) => Ok(r),
+        Response::Error(e) => {
+            error!("error on response: {}", e);
+            Err(io::Error::new(io::ErrorKind::Other, e))
         }
-    }
-}
-
-impl Supervised for Connection {
-    fn restarting(&mut self, ctx: &mut Self::Context) {
-        if self.state == ConnState::Stopped {
-            ctx.stop();
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ConnectionError {
-    Timeout,
-    IoError(io::Error),
-}
-
-impl std::error::Error for ConnectionError {
-    fn description(&self) -> &str {
-        match *self {
-            ConnectionError::Timeout => "tcp connection timeout",
-            ConnectionError::IoError(ref err) => err.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&std::error::Error> {
-        match *self {
-            ConnectionError::Timeout => None,
-            ConnectionError::IoError(ref err) => Some(err),
-        }
-    }
-}
-
-impl std::fmt::Display for ConnectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use std::error::Error;
-        std::fmt::Display::fmt(self.description(), f)
     }
 }

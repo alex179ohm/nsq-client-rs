@@ -96,7 +96,7 @@ $ cargo run
 
 ### ToDo
 - [ ] Discovery
-- [ ] TLS
+- [X] TLS
 - [ ] Snappy
 - [ ] First-ready-first-served readers routing algorithm.
 
