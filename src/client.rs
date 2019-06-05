@@ -91,6 +91,7 @@ where
     cmd_channel: CmdChannel,
     _conns: HashMap<u32, Sender<Cmd>>,
     sentinel: Sentinel,
+    poll: Poll,
     _is_connected: AtomicCell<bool>,
 }
 
@@ -120,6 +121,7 @@ where
             cmd_channel: CmdChannel::new(),
             _conns: HashMap::new(),
             sentinel: Sentinel::new(),
+            poll: Poll::new().unwrap(),
             _is_connected: AtomicCell::new(false),
         }
     }
