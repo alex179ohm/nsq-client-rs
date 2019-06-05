@@ -30,7 +30,7 @@ pub enum State {
     Subscribe,
     Rdy,
     Started,
-}
+} 
 
 #[derive(Debug)]
 pub struct Conn {

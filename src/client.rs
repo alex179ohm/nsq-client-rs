@@ -89,9 +89,9 @@ where
     secret: Option<S>,
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
-    conns: HashMap<u32, Sender<Cmd>>,
+    _conns: HashMap<u32, Sender<Cmd>>,
     sentinel: Sentinel,
-    is_connected: AtomicCell<bool>,
+    _is_connected: AtomicCell<bool>,
 }
 
 impl<C, S> Client<C, S>
@@ -118,9 +118,9 @@ where
             max_attemps,
             msg_channel: MsgChannel::new(),
             cmd_channel: CmdChannel::new(),
-            conns: HashMap::new(),
+            _conns: HashMap::new(),
             sentinel: Sentinel::new(),
-            is_connected: AtomicCell::new(false),
+            _is_connected: AtomicCell::new(false),
         }
     }
 
@@ -208,14 +208,14 @@ where
                             },
                             &mut ctx,
                         );
-                    } 
+                    }
                 }
             });
         }
     }
 
     pub fn spawn_producer<H: Producer>(&mut self, n_threads: usize, handler: H) {
-        for i in 0..n_threads {
+        for _i in 0..n_threads {
             let mut boxed = Box::new(handler);
             let cmd_chan = self.cmd_channel.0.clone();
             let sentinel = self.sentinel.0.clone();
@@ -223,7 +223,7 @@ where
                 info!("producer spawned");
                 let mut ctx = Context::new(cmd_chan, sentinel);
                 boxed.send(&mut ctx);
-            }); 
+            });
         }
     }
 }
