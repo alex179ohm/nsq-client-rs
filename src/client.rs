@@ -7,6 +7,7 @@ use std::io::{self, Read, Write};
 use mio::net::TcpStream;
 use std::fmt::Display;
 use std::convert::AsRef;
+//use std::time::{Instant, Duration};
 
 use crossbeam::channel::{self, Receiver, Sender};
 use crossbeam::atomic::AtomicCell;
@@ -81,7 +82,7 @@ where
     S: Into<String> + Clone,
 {
     rdy: u32,
-    max_attemps: u16,
+    msg_timeout: u32,
     channel: String,
     topic: String,
     addr: String,
@@ -107,7 +108,7 @@ where
         config: Config<C>,
         secret: Option<S>,
         rdy: u32,
-        max_attemps: u16,
+        msg_timeout: u32,
     ) -> Client<C, S> {
         Client {
             topic: topic.into(),
@@ -116,7 +117,7 @@ where
             config,
             rdy,
             secret,
-            max_attemps,
+            msg_timeout,
             msg_channel: MsgChannel::new(),
             cmd_channel: CmdChannel::new(),
             _conns: HashMap::new(),
@@ -182,25 +183,13 @@ where
             let cmd_chan = self.cmd_channel.0.clone();
             let msg_chan = self.msg_channel.1.clone();
             let sentinel = self.sentinel.0.clone();
-            let max_attemps = self.max_attemps;
+            let msg_timeout = self.msg_timeout;
             thread::spawn(move || {
                 info!("Handler spawned");
-                let mut ctx = Context::new(cmd_chan, sentinel);
+                let mut ctx = Context::new(cmd_chan, sentinel, msg_timeout);
                 loop {
                     if let Ok(ref mut msg) = msg_chan.recv() {
                         let msg = decode_msg(msg);
-                        if msg.1 >= max_attemps {
-                            boxed.on_max_attemps(
-                                Msg {
-                                    timestamp: msg.0,
-                                    attemps: msg.1,
-                                    id: msg.2,
-                                    body: msg.3,
-                                },
-                                &mut ctx,
-                            );
-                            continue;
-                        }
                         boxed.handle(
                             Msg {
                                 timestamp: msg.0,
@@ -223,7 +212,7 @@ where
             let sentinel = self.sentinel.0.clone();
             thread::spawn(move || {
                 info!("producer spawned");
-                let mut ctx = Context::new(cmd_chan, sentinel);
+                let mut ctx = Context::new(cmd_chan, sentinel, 0);
                 boxed.send(&mut ctx);
             });
         }
@@ -292,14 +281,20 @@ where
 pub struct Context {
     cmd_s: Sender<Cmd>,
     sentinel: Sender<()>,
+    msg_timeout: u32,
 }
 
 impl Context {
-    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>) -> Context {
+    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>, msg_timeout: u32) -> Context {
         Context {
             cmd_s,
             sentinel,
+            msg_timeout,
         }
+    }
+
+    pub fn timeout(&self) -> u32 {
+        self.msg_timeout
     }
 
     pub fn send<C: NsqCmd>(&mut self, cmd: C) {
