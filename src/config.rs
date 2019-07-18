@@ -102,8 +102,8 @@ where
     /// Default: **hostname** where connection is started
     pub user_agent: String,
 
-    /// Timeout used by nsqd before flushing buffered writes (set to 0 to disable).
-    ///
+    /// Timeout used by nsqd before flushing buffered writes in milliseconds (set to 0 to disable).
+    /// 
     /// Default: **0**
     pub message_timeout: u32,
 
