@@ -281,6 +281,7 @@ where
                     conn.write_messages();
                 }
                 thread::sleep_ms(200);
+                thread::yield_now();
             }
         }
     }
