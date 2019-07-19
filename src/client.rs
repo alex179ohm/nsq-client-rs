@@ -3,7 +3,7 @@ use std::process;
 use std::thread;
 use std::time::Duration;
 
-use crossbeam::channel::{self, Receiver, Sender};
+use crossbeam::channel::{self, Receiver, Sender, Select, RecvError};
 use log::{debug, error, info};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token, event::Event};
@@ -18,7 +18,7 @@ use crate::conn::{Conn, State, CONNECTION};
 //#[cfg(feature = "async")]
 //use std::future::Future;
 use crate::config::{Config, NsqdConfig};
-use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo};
+use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo};
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
@@ -70,6 +70,8 @@ where
     sentinel: Sentinel,
     in_cmd: Receiver<ConnMsg>,
     out_info: Sender<ConnMsgInfo>,
+    connected_s: Sender<bool>,
+    connected_r: Receiver<bool>,
 }
 
 impl<C, S> Client<C, S>
@@ -88,6 +90,7 @@ where
         in_cmd: Receiver<ConnMsg>,
         out_info: Sender<ConnMsgInfo>,
     ) -> Client<C, S> {
+        let (s, r): (Sender<bool>, Receiver<bool>) = channel::unbounded();
         Client {
             topic: topic.into(),
             channel: channel.into(),
@@ -101,6 +104,8 @@ where
             sentinel: Sentinel::new(),
             in_cmd,
             out_info,
+            connected_s: s,
+            connected_r: r,
         }
     }
 
@@ -161,6 +166,7 @@ where
                                     panic!("Error on reading socket: {:?}", e);
                                 }
                                 break;
+                                self.out_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 }));
                             }
                             _ => {}
                         };
@@ -292,42 +298,82 @@ where
         for _i in 0..n_threads {
             let mut boxed = Box::new(reader.clone());
             let cmd = self.cmd_channel.0.clone();
-            let msg = self.msg_channel.1.clone();
+            let msg_ch = self.msg_channel.1.clone();
             let sentinel = self.sentinel.0.clone();
             let max_attemps = self.max_attemps;
+            let conn_s = self.connected_r.clone();
             thread::spawn(move || {
-                info!("Handler spawned");
                 let mut ctx = Context::new(cmd, sentinel);
+                info!("Handler spawned");
                 loop {
-                    if let Ok(ref mut msg) = msg.recv() {
+                    if let Ok(m) = conn_s.try_recv() {
+                        boxed.on_close(&mut ctx);
+                    }
+                    if let Ok(ref mut msg) = msg_ch.recv() {
                         let msg = decode_msg(msg);
-                        if msg.1 >= max_attemps {
-                            boxed.on_max_attemps(
-                                Msg {
-                                    timestamp: msg.0,
-                                    attemps: msg.1,
-                                    id: msg.2,
-                                    body: msg.3,
-                                },
-                                &mut ctx,
-                            );
-                            continue;
-                        }
-                        boxed.on_msg(
-                            Msg {
-                                timestamp: msg.0,
-                                attemps: msg.1,
-                                id: msg.2,
-                                body: msg.3,
-                            },
-                            &mut ctx,
-                        );
+                        boxed.on_msg(Msg {
+                            timestamp: msg.0,
+                            attemps: msg.1,
+                            id: msg.2,
+                            body: msg.3,
+                        }, &mut ctx);
                     }
                 }
             });
         }
     }
 }
+
+//fn recv_multiple<T, H: Consumer>(r_msg: Receiver<Msg>, r_info: Receiver<ConnMsgInfo>, b: Box<H>, c: &mut Context) -> Result<(), RecvError> {
+//    // Build a list of operations.
+//    let rs = &[r_msg, r_info];
+//    let mut sel = Select::new();
+//    for r in rs {
+//        sel.recv(r);
+//    }
+//
+//    loop {
+//        // Wait until a receive operation becomes ready and try executing it.
+//        let index = sel.ready();
+//        if index == 0 {
+//            let res = rs[index].try_recv();
+//            match res {
+//                Err(e) => {
+//                    if e.is_empty() {
+//                        continue;
+//                    }
+//                    return RecvError;
+//                },
+//                Ok(ref mut msg) => {
+//                    let m = decode_msg(msg);
+//                    b.on_msg(Msg { timestamp: m.0, attemps: m.1, id: m.2, body: m.3 }, &mut c);
+//                    return Ok(())
+//                }
+//            };
+//        } else {
+//            let res = rs[index].try_recv();
+//            match res {
+//                Err(e) => {
+//                    if e.is_empty() {
+//                        continue;
+//                    }
+//                },
+//                Ok(msg) => {
+//                    let m = decode_msg(msg);
+//                    b.on_msg(Msg { timestamp: m.0, attemps: m.1, id: m.2, body: m.3 });
+//                }
+//            }
+//            return res.map_err(|_| RecvError);
+//            return Ok(())
+//        }
+//
+//        // If the operation turns out not to be ready, retry.
+//
+//
+//
+//        // Success!
+//    }
+//}
 
 pub enum EventMsg {
     Conn(Event),
