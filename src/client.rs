@@ -280,7 +280,7 @@ where
                 } else {
                     conn.write_messages();
                 }
-                thread::sleep_ms(100);
+                thread::sleep_ms(200);
             }
         }
     }
