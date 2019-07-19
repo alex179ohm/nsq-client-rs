@@ -8,9 +8,12 @@ use std::future::Future;
 
 #[cfg(not(feature = "async"))]
 pub trait Consumer: Clone + Sync + Send + 'static {
-    fn handle(&mut self, msg: Msg, ctx: &mut Context);
+    fn on_msg(&mut self, msg: Msg, ctx: &mut Context);
     fn on_max_attemps(&mut self, msg: Msg, ctx: &mut Context) {
         ctx.send(Touch(msg.id));
+    }
+    fn on_close(&mut self, ctx: &mut Context) {
+        
     }
 }
 
