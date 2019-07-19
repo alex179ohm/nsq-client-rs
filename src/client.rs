@@ -133,6 +133,7 @@ where
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         loop {
             if let Ok(msg) = self.in_cmd.try_recv() {
+                println!("{:?}", msg);
                 match msg {
                     ConnMsg::Close => {
                         conn.close();
