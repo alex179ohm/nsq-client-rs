@@ -17,7 +17,7 @@ use crate::conn::{Conn, State, CONNECTION};
 //#[cfg(feature = "async")]
 //use std::future::Future;
 use crate::config::{Config, NsqdConfig};
-use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg};
+use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo};
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
@@ -67,7 +67,8 @@ where
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
     sentinel: Sentinel,
-    in_cmd: Option<Receiver<ConnMsg>>,
+    in_cmd: Receiver<ConnMsg>,
+    out_info: Sender<ConnMsgInfo>,
 }
 
 impl<C, S> Client<C, S>
@@ -83,7 +84,8 @@ where
         secret: Option<S>,
         rdy: u32,
         max_attemps: u16,
-        in_cmd: Option<Receiver<ConnMsg>>,
+        in_cmd: Receiver<ConnMsg>,
+        out_info: Sender<ConnMsgInfo>,
     ) -> Client<C, S> {
         Client {
             topic: topic.into(),
@@ -97,6 +99,7 @@ where
             cmd_channel: CmdChannel::new(),
             sentinel: Sentinel::new(),
             in_cmd,
+            out_info,
         }
     }
 
@@ -110,11 +113,6 @@ where
                 }
             }
         });
-        //let secret: String = if let Some(s) = &self.secret {
-        //    *s.into::<String>()
-        //} else {
-        //    String::new()
-        //};
 
         let mut conn = Conn::new(
             self.addr.clone(),

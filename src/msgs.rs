@@ -190,11 +190,20 @@ impl NsqCmd for Dpub {
 pub enum ConnMsg {
     Close,
     Connect(String),
+    GetIsConnected,
 }
 
-pub enum ConnInfo {
-    IsConnected(bool),
-    LastTimeConnected(u32),
-    LastMsgReceived(u32),
-    LastMsgSent(u32),
+pub struct ConnInfo {
+    connected: bool,
+    last_time: u32,
+}
+
+pub struct MsgTimeInfo {
+    last_time_recv: u32,
+    last_time_sent: u32,
+}
+
+pub enum ConnMsgInfo {
+    IsConnected(ConnInfo),
+    MsgInfo(MsgTimeInfo),
 }
