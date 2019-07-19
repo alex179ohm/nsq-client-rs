@@ -187,22 +187,26 @@ impl NsqCmd for Dpub {
     }
 }
 
+#[derive(Debug)]
 pub enum ConnMsg {
     Close,
     Connect(String),
     GetIsConnected,
 }
 
+#[derive(Debug)]
 pub struct ConnInfo {
     connected: bool,
     last_time: i64,
 }
 
+#[derive(Debug)]
 pub struct MsgTimeInfo {
     last_time_recv: i64,
-    last_time_sent: i64,
+    last_time_sent: u32,
 }
 
+#[derive(Debug)]
 pub enum ConnMsgInfo {
     IsConnected(ConnInfo),
     MsgInfo(MsgTimeInfo),

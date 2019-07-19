@@ -65,6 +65,7 @@ where
     processed: u32,
     pub need_response: bool,
     pub state: State,
+    last_time_sent: i64,
 }
 
 impl<S> Conn<S>
@@ -209,6 +210,7 @@ where
     pub fn write_messages(&mut self) {
         let msgs: Vec<Cmd> = self.r.try_iter().collect();
         for msg in msgs {
+            let now: DateTime<Utc> = Utc::now();
             self.write_cmd(msg);
             if let Err(e) = self.write() {
                 error!("error writing msg on socket: {:?}", e);
@@ -216,6 +218,7 @@ where
             if let Err(e) = self.socket.flush() {
                 error!("error flushing socket: {:?}", e);
             };
+            self.last_time_sent = now;
             self.in_flight -= 1;
             self.processed += 1;
         }
