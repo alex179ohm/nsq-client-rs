@@ -1,11 +1,12 @@
 //use std::io::{self, Read, Write};
 use std::process;
 use std::thread;
+use std::time::Duration;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info};
 
-use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
+use mio::{Events, Poll, PollOpt, Ready, Registration, Token, event::Event};
 use serde_json;
 
 //#[cfg(feature = "async")]
@@ -131,7 +132,15 @@ where
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         loop {
-            if let Err(e) = poll.poll(&mut evts, None) {
+            if let Ok(msg) = self.in_cmd.try_recv() {
+                match msg {
+                    ConnMsg::Close => {
+                        conn.close();
+                    },
+                    _ => {},
+                }
+            }
+            if let Err(e) = poll.poll(&mut evts, Some(Duration::new(0, 100))) {
                 error!("polling events failed");
                 panic!("{}", e);
             }
@@ -271,6 +280,7 @@ where
                 } else {
                     conn.write_messages();
                 }
+                thread::sleep_ms(100);
             }
         }
     }
@@ -315,6 +325,11 @@ where
             });
         }
     }
+}
+
+pub enum EventMsg {
+    Conn(Event),
+    Client(ConnMsg),
 }
 
 #[derive(Debug)]

@@ -3,7 +3,7 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo};
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo, ConnInfo};
 use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
@@ -17,6 +17,7 @@ use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::process;
 use std::thread;
+use std::net::Shutdown;
 use chrono::{DateTime, Utc};
 
 pub const CONNECTION: Token = Token(0);
@@ -128,6 +129,12 @@ where
             s_info,
             last_time_sent: 0,
         }
+    }
+
+    pub fn close(&mut self) -> io::Result<()> {
+        let _ = self.socket.shutdown(Shutdown::Both);
+        self.s_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 }));
+        Ok(())
     }
 
     pub fn magic(&mut self) {

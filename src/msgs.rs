@@ -196,14 +196,14 @@ pub enum ConnMsg {
 
 #[derive(Debug)]
 pub struct ConnInfo {
-    connected: bool,
-    last_time: i64,
+    pub connected: bool,
+    pub last_time: i64,
 }
 
 #[derive(Debug)]
 pub struct MsgTimeInfo {
-    last_time_recv: i64,
-    last_time_sent: u32,
+    pub last_time_recv: i64,
+    pub last_time_sent: u32,
 }
 
 #[derive(Debug)]
