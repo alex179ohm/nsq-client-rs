@@ -120,6 +120,7 @@ where
             }
         });
 
+        println!("Creating conn");
         let mut conn = Conn::new(
             self.addr.clone(),
             self.config.clone(),
@@ -127,6 +128,7 @@ where
             self.msg_channel.0.clone(),
             self.out_info.clone(),
         );
+        println!("Conn created");
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
         conn.register(&mut poll);
@@ -137,15 +139,6 @@ where
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         loop {
-            if let Ok(msg) = self.in_cmd.recv() {
-                println!("{:?}", msg);
-                match msg {
-                    ConnMsg::Close => {
-                        conn.close();
-                    },
-                    _ => {},
-                }
-            }
             if let Err(e) = poll.poll(&mut evts, Some(Duration::new(0, 10000))) {
                 error!("polling events failed");
                 panic!("{}", e);
