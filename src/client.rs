@@ -301,7 +301,7 @@ where
                             );
                             continue;
                         }
-                        boxed.handle(
+                        boxed.on_msg(
                             Msg {
                                 timestamp: msg.0,
                                 attemps: msg.1,
