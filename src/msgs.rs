@@ -186,3 +186,15 @@ impl NsqCmd for Dpub {
         self.2.clone()
     }
 }
+
+pub enum ConnMsg {
+    Close,
+    Connect(String),
+}
+
+pub enum ConnInfo {
+    IsConnected(bool),
+    LastTimeConnected(u32),
+    LastMsgRecieved(u32),
+    LastMsgSent(u32),
+}
