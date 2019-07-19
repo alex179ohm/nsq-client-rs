@@ -19,6 +19,6 @@ mod tls;
 pub use client::{Client, Context};
 pub use config::{Config, VerifyServerCert};
 pub use conn::Conn;
-pub use msgs::{Cls, Dpub, Fin, Mpub, Msg, NsqCmd, Pub, Requeue, Touch, ConnMsg, ConnInfo};
+pub use msgs::{Cls, Dpub, Fin, Mpub, Msg, NsqCmd, Pub, Requeue, Touch, ConnMsg, ConnMsgInfo};
 pub use producer::Producer;
 pub use reader::Consumer;
