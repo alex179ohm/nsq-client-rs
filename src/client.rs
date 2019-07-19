@@ -1,7 +1,7 @@
 //use std::io::{self, Read, Write};
 use std::process;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam::channel::{self, Receiver, Sender, Select, RecvError};
 use log::{debug, error, info};
@@ -138,10 +138,14 @@ where
         }
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
+        let mut last_heartbeat = Instant::now();
         loop {
-            if let Err(e) = poll.poll(&mut evts, Some(Duration::new(0, 10000))) {
+            if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                 error!("polling events failed");
                 panic!("{}", e);
+            }
+            if last_heartbeat.elapsed() > Duration::new(45, 0) {
+                self.msg_channel.0.send(BytesMut::new());
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
@@ -268,6 +272,7 @@ where
                         };
                     } else {
                         if conn.heartbeat {
+                            last_heartbeat = Instant::now();
                             conn.write_cmd(Nop);
                             if let Err(e) = conn.write() {
                                 error!("writing on socket: {:?}", e);
@@ -299,10 +304,10 @@ where
                 let mut ctx = Context::new(cmd, sentinel);
                 info!("Handler spawned");
                 loop {
-                    if let Ok(m) = conn_s.try_recv() {
-                        boxed.on_close(&mut ctx);
-                    }
                     if let Ok(ref mut msg) = msg_ch.recv() {
+                        if msg.len() == 0 {
+                            boxed.on_close(&mut ctx);
+                        }
                         let msg = decode_msg(msg);
                         boxed.on_msg(Msg {
                             timestamp: msg.0,
