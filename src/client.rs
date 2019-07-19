@@ -132,8 +132,7 @@ where
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         loop {
-            println!("I'm in loop");
-            if let Ok(msg) = self.in_cmd.try_recv() {
+            if let Ok(msg) = self.in_cmd.recv() {
                 println!("{:?}", msg);
                 match msg {
                     ConnMsg::Close => {
