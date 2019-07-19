@@ -307,6 +307,7 @@ where
                     if let Ok(ref mut msg) = msg_ch.recv() {
                         if msg.len() == 0 {
                             boxed.on_close(&mut ctx);
+                            continue;
                         }
                         let msg = decode_msg(msg);
                         boxed.on_msg(Msg {
