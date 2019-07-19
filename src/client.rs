@@ -278,7 +278,7 @@ where
     #[cfg(not(feature = "async"))]
     pub fn spawn<H: Consumer>(&mut self, n_threads: usize, reader: H) {
         for _i in 0..n_threads {
-            let mut boxed = Box::new(reader);
+            let mut boxed = Box::new(reader.clone());
             let cmd = self.cmd_channel.0.clone();
             let msg = self.msg_channel.1.clone();
             let sentinel = self.sentinel.0.clone();

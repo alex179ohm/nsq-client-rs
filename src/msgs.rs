@@ -195,12 +195,12 @@ pub enum ConnMsg {
 
 pub struct ConnInfo {
     connected: bool,
-    last_time: u32,
+    last_time: i64,
 }
 
 pub struct MsgTimeInfo {
-    last_time_recv: u32,
-    last_time_sent: u32,
+    last_time_recv: i64,
+    last_time_sent: i64,
 }
 
 pub enum ConnMsgInfo {

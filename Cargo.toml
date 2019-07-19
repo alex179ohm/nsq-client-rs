@@ -45,4 +45,5 @@ webpki-roots = "0.16"
 webpki = "0.19"
 # webpki = { git = "https://github.com/alex179ohm/webpki", tag = "next", optional = true }
 untrusted = "0.6.2"
+chrono = "0.4.7"
 # futures-preview = { version = "0.3.0-alpha.13", optional = true }
