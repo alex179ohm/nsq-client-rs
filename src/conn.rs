@@ -16,8 +16,9 @@ use std::fmt::Display;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::process;
-use std::thread;
+use std::thread::{self, Thread};
 use std::net::Shutdown;
+use std::sync::{Arc, atomic::{Ordering, AtomicBool}};
 use chrono::{DateTime, Utc};
 
 pub const CONNECTION: Token = Token(0);
@@ -67,6 +68,7 @@ where
     pub need_response: bool,
     pub state: State,
     last_time_sent: i64,
+    handle: Thread,
 }
 
 impl<S> Conn<S>
@@ -107,7 +109,6 @@ where
         };
         let verify_server_cert = config.verify_server.clone();
         Conn {
-            //addr: addr.clone(),
             socket,
             r_buf: BytesMut::new(),
             w_buf: BytesMut::new(),
@@ -128,6 +129,7 @@ where
             state: State::Start,
             s_info,
             last_time_sent: 0,
+            handle: thread::current(),
         }
     }
 
@@ -232,10 +234,6 @@ where
         }
         info!("inflight: {}", self.in_flight);
         info!("processed {}", self.processed);
-        //if self.processed == 2000 {
-        //    info!("time: {:?}", std::time::Instant::now().duration_since(self.now));
-        //    std::process::exit(0);
-        //}
     }
 
     pub fn decode(&mut self, size: usize) {
