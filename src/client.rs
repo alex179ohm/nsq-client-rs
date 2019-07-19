@@ -140,7 +140,7 @@ where
                     _ => {},
                 }
             }
-            if let Err(e) = poll.poll(&mut evts, Some(Duration::new(0, 100))) {
+            if let Err(e) = poll.poll(&mut evts, Some(Duration::new(0, 10000))) {
                 error!("polling events failed");
                 panic!("{}", e);
             }
