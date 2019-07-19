@@ -1,4 +1,3 @@
-//use std::io::{self, Read, Write};
 use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -9,14 +8,8 @@ use log::{debug, error, info};
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token, event::Event};
 use serde_json;
 
-//#[cfg(feature = "async")]
-//use crate::async_context::ContextAsync;
 use crate::codec::decode_msg;
 use crate::conn::{Conn, State, CONNECTION};
-//#[cfg(feature = "async")]
-//use futures::executor::LocalPool;
-//#[cfg(feature = "async")]
-//use std::future::Future;
 use crate::config::{Config, NsqdConfig};
 use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo};
 use crate::reader::Consumer;
@@ -34,7 +27,6 @@ impl CmdChannel {
 }
 
 #[derive(Clone, Debug)]
-//pub(crate) struct MsgChannel(pub Sender<Msg>, pub Receiver<Msg>);
 pub(crate) struct MsgChannel(pub Sender<BytesMut>, pub Receiver<BytesMut>);
 
 impl MsgChannel {
@@ -322,57 +314,6 @@ where
         }
     }
 }
-
-//fn recv_multiple<T, H: Consumer>(r_msg: Receiver<Msg>, r_info: Receiver<ConnMsgInfo>, b: Box<H>, c: &mut Context) -> Result<(), RecvError> {
-//    // Build a list of operations.
-//    let rs = &[r_msg, r_info];
-//    let mut sel = Select::new();
-//    for r in rs {
-//        sel.recv(r);
-//    }
-//
-//    loop {
-//        // Wait until a receive operation becomes ready and try executing it.
-//        let index = sel.ready();
-//        if index == 0 {
-//            let res = rs[index].try_recv();
-//            match res {
-//                Err(e) => {
-//                    if e.is_empty() {
-//                        continue;
-//                    }
-//                    return RecvError;
-//                },
-//                Ok(ref mut msg) => {
-//                    let m = decode_msg(msg);
-//                    b.on_msg(Msg { timestamp: m.0, attemps: m.1, id: m.2, body: m.3 }, &mut c);
-//                    return Ok(())
-//                }
-//            };
-//        } else {
-//            let res = rs[index].try_recv();
-//            match res {
-//                Err(e) => {
-//                    if e.is_empty() {
-//                        continue;
-//                    }
-//                },
-//                Ok(msg) => {
-//                    let m = decode_msg(msg);
-//                    b.on_msg(Msg { timestamp: m.0, attemps: m.1, id: m.2, body: m.3 });
-//                }
-//            }
-//            return res.map_err(|_| RecvError);
-//            return Ok(())
-//        }
-//
-//        // If the operation turns out not to be ready, retry.
-//
-//
-//
-//        // Success!
-//    }
-//}
 
 pub enum EventMsg {
     Conn(Event),
