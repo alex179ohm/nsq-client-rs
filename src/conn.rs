@@ -3,7 +3,7 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION};
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo};
 use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
@@ -47,6 +47,7 @@ where
     socket: TcpStream,
     //receive Cmd from readers.
     r: Receiver<Cmd>,
+    s_info: Sender<ConnMsgInfo>,
     //heartbeat
     pub heartbeat: bool,
     //responses
@@ -70,7 +71,7 @@ where
     S: Into<String> + Clone,
 {
 
-    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMut>) -> Conn<S>
+    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMut>, s_info: Sender<ConnMsgInfo>) -> Conn<S>
     where
         A: ToSocketAddrs + Into<String> + Display + Clone,
     {
@@ -122,6 +123,7 @@ where
             processed: 0,
             need_response: false,
             state: State::Start,
+            s_info,
         }
     }
 

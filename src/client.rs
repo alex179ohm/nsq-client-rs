@@ -119,8 +119,8 @@ where
             self.config.clone(),
             self.cmd_channel.1.clone(),
             self.msg_channel.0.clone(),
+            self.out_info.clone(),
         );
-        //conn.start();
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
         conn.register(&mut poll);
