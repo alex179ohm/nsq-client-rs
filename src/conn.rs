@@ -126,6 +126,7 @@ where
             need_response: false,
             state: State::Start,
             s_info,
+            last_time_sent: 0,
         }
     }
 
@@ -218,7 +219,7 @@ where
             if let Err(e) = self.socket.flush() {
                 error!("error flushing socket: {:?}", e);
             };
-            self.last_time_sent = now;
+            self.last_time_sent = now.timestamp();
             self.in_flight -= 1;
             self.processed += 1;
         }
