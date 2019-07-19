@@ -195,6 +195,6 @@ pub enum ConnMsg {
 pub enum ConnInfo {
     IsConnected(bool),
     LastTimeConnected(u32),
-    LastMsgRecieved(u32),
+    LastMsgReceived(u32),
     LastMsgSent(u32),
 }

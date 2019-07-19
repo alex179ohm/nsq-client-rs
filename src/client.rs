@@ -17,7 +17,7 @@ use crate::conn::{Conn, State, CONNECTION};
 //#[cfg(feature = "async")]
 //use std::future::Future;
 use crate::config::{Config, NsqdConfig};
-use crate::msgs::{Cmd, Msg, Nop, NsqCmd};
+use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg};
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
@@ -67,6 +67,7 @@ where
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
     sentinel: Sentinel,
+    in_cmd: Option<Receiver<ConnMsg>>,
 }
 
 impl<C, S> Client<C, S>
@@ -82,6 +83,7 @@ where
         secret: Option<S>,
         rdy: u32,
         max_attemps: u16,
+        in_cmd: Option<Receiver<ConnMsg>>,
     ) -> Client<C, S> {
         Client {
             topic: topic.into(),
@@ -94,6 +96,7 @@ where
             msg_channel: MsgChannel::new(),
             cmd_channel: CmdChannel::new(),
             sentinel: Sentinel::new(),
+            in_cmd,
         }
     }
 
