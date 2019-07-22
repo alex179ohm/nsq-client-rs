@@ -174,6 +174,7 @@ where
                             _ => {},
                         }
                     }
+                    continue;
                 }
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
