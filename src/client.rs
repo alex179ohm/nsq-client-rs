@@ -152,6 +152,7 @@ where
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         let mut last_heartbeat = Instant::now();
+        let mut tls = 0;
         loop {
             if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                 error!("polling events failed");
