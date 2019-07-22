@@ -68,6 +68,7 @@ where
     out_info: Sender<ConnMsgInfo>,
     connected_s: Sender<bool>,
     connected_r: Receiver<bool>,
+    msg_timeout: u64,
 }
 
 impl<C, S> Client<C, S>
@@ -102,6 +103,7 @@ where
             out_info,
             connected_s: s,
             connected_r: r,
+            msg_timeout: 0,
         }
     }
 
@@ -170,9 +172,6 @@ where
                                 poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
                                 return Ok(());
                             },
-//                            ConnMsg::Connect => {
-//                                let _ = conn.socket = connect()
-//                            }
                             _ => {},
                         }
                     }
@@ -210,6 +209,7 @@ where
                                     nsqd_config = serde_json::from_str(&resp)
                                         .expect("failed to decode identify response");
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
+                                    self.msg_timeout = nsqd_config.msg_timeout;
                                     if nsqd_config.tls_v1 {
                                         conn.tls_enabled();
                                         conn.reregister(&mut poll, Ready::readable());
@@ -329,8 +329,9 @@ where
             let sentinel = self.sentinel.0.clone();
             let max_attemps = self.max_attemps;
             let conn_s = self.connected_r.clone();
+            let timeout = self.msg_timeout.clone();
             thread::spawn(move || {
-                let mut ctx = Context::new(cmd, sentinel);
+                let mut ctx = Context::new(cmd, sentinel, timeout);
                 info!("Handler spawned");
                 loop {
                     if let Ok(ref mut msg) = msg_ch.recv() {
@@ -352,22 +353,19 @@ where
     }
 }
 
-//pub enum EventMsg {
-//    Conn(Event),
-//    Client(ConnMsg),
-//}
-
 #[derive(Debug)]
 pub struct Context {
     cmd_s: Sender<Cmd>,
     sentinel: Sender<()>,
+    msg_timeout: u64,
 }
 
 impl Context {
-    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>) -> Context {
+    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>, msg_timeout: u64) -> Context {
         Context {
             cmd_s,
             sentinel: sentinel,
+            msg_timeout,
         }
     }
 

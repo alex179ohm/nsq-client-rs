@@ -12,9 +12,7 @@ pub trait Consumer: Clone + Sync + Send + 'static {
     fn on_max_attemps(&mut self, msg: Msg, ctx: &mut Context) {
         ctx.send(Touch(msg.id));
     }
-    fn on_close(&mut self, ctx: &mut Context) {
-        
-    }
+    fn on_close(&mut self, ctx: &mut Context) {}
 }
 
 #[cfg(feature = "async")]
