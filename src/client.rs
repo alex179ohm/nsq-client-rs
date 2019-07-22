@@ -1,6 +1,7 @@
 use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::io;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info};
@@ -104,7 +105,7 @@ where
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> io::Result<()> {
         let (handler, set_readiness) = Registration::new2();
         let r_sentinel = self.sentinel.1.clone();
         thread::spawn(move || loop {
@@ -117,10 +118,13 @@ where
         let (cmd_handler, cmd_readiness) = Registration::new2();
         let r_cmd = self.in_cmd.clone();
         let msg_ch = self.msg_channel.0.clone();
+        let (s_close, r_close): (Sender<u32>, Receiver<u32>) = channel::unbounded();
         thread::spawn(move || loop {
             if let Ok(msg) = r_cmd.recv() {
                 println!("connection msg received: {:?}", msg);
                 let _ = msg_ch.send(BytesMut::new());
+                let _ = s_close.send(1);
+                cmd_readiness.set_readiness(Ready::readable());
             } 
         });
 
@@ -140,7 +144,7 @@ where
             error!("registering handler");
             panic!("{}", e);
         }
-        if let Err(e) = poll.register(&handler, CMD_TOKEN, Ready::readable(), PollOpt::edge()) {
+        if let Err(e) = poll.register(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge()) {
             error!("registering handler");
             panic!("{}", e);
         }
@@ -159,21 +163,21 @@ where
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
-//                if ev.token() == CMD_TOKEN {
-//                    if let Ok(msg) = r_inner_cmd.try_recv() {
-//                        match msg {
-//                            ConnMsg::Close => {
-//                                let _ = conn.close();
-//                                let _ = self.msg_channel.0.send(BytesMut::new());
-//                            },
-////                            ConnMsg::Connect => {
-////                                let _ = conn.socket = connect()
-////                            }
-//                            _ => {},
-//                        }
-//                    }
-//                    continue;
-//                }
+                if ev.token() == CMD_TOKEN {
+                    if let Ok(msg) = r_close.try_recv() {
+                        match msg {
+                            1 => {
+                                let _ = conn.close();
+                                return Ok(());
+                            },
+//                            ConnMsg::Connect => {
+//                                let _ = conn.socket = connect()
+//                            }
+                            _ => {},
+                        }
+                    }
+                    continue;
+                }
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
                         match conn.read() {
