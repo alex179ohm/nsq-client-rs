@@ -117,12 +117,10 @@ where
         });
         let (cmd_handler, cmd_readiness) = Registration::new2();
         let r_cmd = self.in_cmd.clone();
-        let msg_ch = self.msg_channel.0.clone();
         let (s_close, r_close): (Sender<u32>, Receiver<u32>) = channel::unbounded();
         thread::spawn(move || loop {
             if let Ok(msg) = r_cmd.recv() {
                 println!("connection msg received: {:?}", msg);
-                let _ = msg_ch.send(BytesMut::new());
                 let _ = s_close.send(1);
                 cmd_readiness.set_readiness(Ready::readable());
             } 
@@ -168,6 +166,7 @@ where
                         match msg {
                             1 => {
                                 let _ = conn.close();
+                                let _ = self.msg_channel.0.send(BytesMut::new());
                                 return Ok(());
                             },
 //                            ConnMsg::Connect => {
