@@ -2,10 +2,10 @@ use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crossbeam::channel::{self, Receiver, Sender, Select, RecvError};
+use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info};
 
-use mio::{Events, Poll, PollOpt, Ready, Registration, Token, event::Event};
+use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
 
 use crate::codec::decode_msg;
@@ -15,6 +15,9 @@ use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo};
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
+
+const CLIENT_TOKEN: Token = Token(1);
+const CMD_TOKEN: Token = Token(2);
 
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);
@@ -111,6 +114,17 @@ where
                 }
             }
         });
+        let (cmd_handler, cmd_readiness) = Registration::new2();
+        let r_cmd = self.in_cmd.clone();
+        let (s_inner_cmd, r_inner_cmd): (Sender<ConnMsg>, Receiver<ConnMsg>) = channel::unbounded();
+        thread::spawn(move || loop {
+            if let Ok(msg) = r_cmd.recv() {
+                if let Err(e) = cmd_readiness.set_readiness(Ready::readable()) {
+                    error!("error on in cmd waker: {}", e);
+                }
+                let _ = s_inner_cmd.send(msg);
+            } 
+        });
 
         println!("Creating conn");
         let mut conn = Conn::new(
@@ -124,7 +138,11 @@ where
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
         conn.register(&mut poll);
-        if let Err(e) = poll.register(&handler, Token(1), Ready::writable(), PollOpt::edge()) {
+        if let Err(e) = poll.register(&handler, CLIENT_TOKEN, Ready::writable(), PollOpt::edge()) {
+            error!("registering handler");
+            panic!("{}", e);
+        }
+        if let Err(e) = poll.register(&handler, CMD_TOKEN, Ready::readable(), PollOpt::edge()) {
             error!("registering handler");
             panic!("{}", e);
         }
@@ -136,11 +154,27 @@ where
                 error!("polling events failed");
                 panic!("{}", e);
             }
+            // if last_heartbeat is not seen shutdown occurred.
             if last_heartbeat.elapsed() > Duration::new(45, 0) {
-                self.msg_channel.0.send(BytesMut::new());
+                // send fake message as closed connection event.
+                let _ = self.msg_channel.0.send(BytesMut::new());
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
+                if ev.token() == CMD_TOKEN {
+                    if let Ok(msg) = r_inner_cmd.try_recv() {
+                        match msg {
+                            ConnMsg::Close => {
+                                let _ = conn.close();
+                                let _ = self.msg_channel.0.send(BytesMut::new());
+                            },
+//                            ConnMsg::Connect => {
+//                                let _ = conn.socket = connect()
+//                            }
+                            _ => {},
+                        }
+                    }
+                }
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
                         match conn.read() {
@@ -154,8 +188,10 @@ where
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
                                     panic!("Error on reading socket: {:?}", e);
                                 }
+                                if let Err(e) = self.out_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 })) {
+                                    panic!("{}", e);
+                                }
                                 break;
-                                self.out_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 }));
                             }
                             _ => {}
                         };
@@ -277,8 +313,6 @@ where
                 } else {
                     conn.write_messages();
                 }
-                thread::sleep_ms(200);
-                thread::yield_now();
             }
         }
     }
@@ -315,10 +349,10 @@ where
     }
 }
 
-pub enum EventMsg {
-    Conn(Event),
-    Client(ConnMsg),
-}
+//pub enum EventMsg {
+//    Conn(Event),
+//    Client(ConnMsg),
+//}
 
 #[derive(Debug)]
 pub struct Context {

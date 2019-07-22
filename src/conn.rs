@@ -18,7 +18,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::process;
 use std::thread::{self, Thread};
 use std::net::Shutdown;
-use std::sync::{Arc, atomic::{Ordering, AtomicBool}};
+//use std::sync::{Arc, atomic::{Ordering, AtomicBool}};
 use chrono::{DateTime, Utc};
 
 pub const CONNECTION: Token = Token(0);
@@ -27,6 +27,7 @@ pub const CONNECTION: Token = Token(0);
 pub enum State {
     Start,
     Identify,
+    TlsNegotiating,
     Tls,
     Auth,
     Subscribe,
@@ -91,7 +92,7 @@ where
         let mut backoff = ExponentialBackoff::default();
         let socket = loop {
             let addr = addrs.next().expect("could not resove addr");
-            match connect(addr) {
+            match socket_connect(addr) {
                 Ok(stream) => {
                     if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize)
                     {
@@ -135,7 +136,6 @@ where
 
     pub fn close(&mut self) -> io::Result<()> {
         let _ = self.socket.shutdown(Shutdown::Both);
-        self.s_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 }));
         Ok(())
     }
 
@@ -386,7 +386,7 @@ where
     }
 }
 
-pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
+pub fn socket_connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
     let tcpstream = if cfg!(windows) {
         let tcp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
         debug!("{:?}", tcp_addr);
@@ -404,6 +404,40 @@ pub fn connect(addr: SocketAddr) -> std::io::Result<TcpStream> {
     };
     info!("[{}] trying to connect to nsqd server", addr);
     TcpStream::connect_stream(tcpstream, &addr)
+}
+
+pub fn connect<A, S>(addr: A, config: Config<S>) -> TcpStream
+where
+    A: ToSocketAddrs + Into<String> + Display + Clone,
+    S: Into<String> + Clone,
+{
+    let server_name: String = addr.clone().into();
+    let mut addrs = match addr.to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            error!("[{}] error on lookup: {}", addr, e);
+            process::exit(1);
+        }
+    };
+    let mut backoff = ExponentialBackoff::default();
+    loop {
+        let addr = addrs.next().expect("could not resove addr");
+        match socket_connect(addr) {
+            Ok(stream) => {
+                if let Err(e) = stream.set_recv_buffer_size(config.output_buffer_size as usize)
+                {
+                    panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
+                }
+                break stream;
+            }
+            Err(e) => {
+                error!("[{}] error on connect to nsqd: {:?}", addr, e);
+                if let Some(timeout) = backoff.next_backoff() {
+                    thread::sleep(timeout);
+                }
+            }
+        }
+    }
 }
 
 pub fn get_response(resp: Response, expect: String) -> Result<String, ()> {
