@@ -167,6 +167,7 @@ where
                             1 => {
                                 let _ = conn.close();
                                 let _ = self.msg_channel.0.send(BytesMut::new());
+                                poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
                                 return Ok(());
                             },
 //                            ConnMsg::Connect => {
