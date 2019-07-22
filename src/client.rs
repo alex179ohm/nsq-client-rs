@@ -362,7 +362,7 @@ pub struct Context {
 }
 
 impl Context {
-    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>, msg_timeout: u64) -> Context {
+    fn new(cmd_s: Sender<Cmd>, sentinel: Sender<()>) -> Context {
         Context {
             cmd_s,
             sentinel: sentinel,
