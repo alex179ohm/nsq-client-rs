@@ -119,6 +119,7 @@ where
         let (s_inner_cmd, r_inner_cmd): (Sender<ConnMsg>, Receiver<ConnMsg>) = channel::unbounded();
         thread::spawn(move || loop {
             if let Ok(msg) = r_cmd.recv() {
+                println!("connection msg received: {:?}", msg);
                 if let Err(e) = cmd_readiness.set_readiness(Ready::readable()) {
                     error!("error on in cmd waker: {}", e);
                 }
