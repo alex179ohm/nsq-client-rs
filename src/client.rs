@@ -330,9 +330,8 @@ where
             let sentinel = self.sentinel.0.clone();
             let max_attemps = self.max_attemps;
             let conn_s = self.connected_r.clone();
-            let timeout = self.msg_timeout.clone();
             thread::spawn(move || {
-                let mut ctx = Context::new(cmd, sentinel, timeout);
+                let mut ctx = Context::new(cmd, sentinel);
                 info!("Handler spawned");
                 loop {
                     if let Ok(ref mut msg) = msg_ch.recv() {
@@ -356,11 +355,10 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Context {
     cmd_s: Sender<Cmd>,
     sentinel: Sender<()>,
-    msg_timeout: u64,
 }
 
 impl Context {
@@ -368,12 +366,7 @@ impl Context {
         Context {
             cmd_s,
             sentinel: sentinel,
-            msg_timeout,
         }
-    }
-
-    pub fn timeout(&self) -> u64 {
-        self.msg_timeout
     }
 
     pub fn send<C: NsqCmd>(&mut self, cmd: C) {
