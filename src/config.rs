@@ -203,4 +203,8 @@ impl Config {
         self.user_agent = user_agent.to_owned();
         self
     }
+
+    pub fn tls(&mut self) {
+        self.tls_v1 = true;
+    }
 }
