@@ -369,9 +369,14 @@ impl Context {
         }
     }
 
+    pub fn timeout(&self) -> u64 {
+        self.msg_timeout
+    }
+
     pub fn send<C: NsqCmd>(&mut self, cmd: C) {
         let cmd = cmd.as_cmd();
         let _ = self.cmd_s.send(cmd);
         let _ = self.sentinel.send(());
     }
 }
+
