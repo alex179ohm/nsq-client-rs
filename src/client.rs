@@ -116,14 +116,11 @@ where
         });
         let (cmd_handler, cmd_readiness) = Registration::new2();
         let r_cmd = self.in_cmd.clone();
-        let (s_inner_cmd, r_inner_cmd): (Sender<ConnMsg>, Receiver<ConnMsg>) = channel::unbounded();
+        let msg_ch = self.msg_channel.0.clone();
         thread::spawn(move || loop {
             if let Ok(msg) = r_cmd.recv() {
                 println!("connection msg received: {:?}", msg);
-                if let Err(e) = cmd_readiness.set_readiness(Ready::readable()) {
-                    error!("error on in cmd waker: {}", e);
-                }
-                let _ = s_inner_cmd.send(msg);
+                let _ = msg_ch.send(BytesMut::new());
             } 
         });
 
@@ -162,21 +159,21 @@ where
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
-                if ev.token() == CMD_TOKEN {
-                    if let Ok(msg) = r_inner_cmd.try_recv() {
-                        match msg {
-                            ConnMsg::Close => {
-                                let _ = conn.close();
-                                let _ = self.msg_channel.0.send(BytesMut::new());
-                            },
-//                            ConnMsg::Connect => {
-//                                let _ = conn.socket = connect()
-//                            }
-                            _ => {},
-                        }
-                    }
-                    continue;
-                }
+//                if ev.token() == CMD_TOKEN {
+//                    if let Ok(msg) = r_inner_cmd.try_recv() {
+//                        match msg {
+//                            ConnMsg::Close => {
+//                                let _ = conn.close();
+//                                let _ = self.msg_channel.0.send(BytesMut::new());
+//                            },
+////                            ConnMsg::Connect => {
+////                                let _ = conn.socket = connect()
+////                            }
+//                            _ => {},
+//                        }
+//                    }
+//                    continue;
+//                }
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
                         match conn.read() {
