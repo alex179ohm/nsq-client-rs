@@ -2,15 +2,17 @@ use std::process;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::io;
+use std::net::Shutdown;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info};
+use native_tls::TlsConnector;
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
 
 use crate::codec::decode_msg;
-use crate::conn::{Conn, State, CONNECTION};
+use crate::conn::{Conn, State, CONNECTION, connect};
 use crate::config::{Config, NsqdConfig};
 use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo, BytesMsg};
 use crate::reader::Consumer;
@@ -49,9 +51,8 @@ impl Sentinel {
     }
 }
 
-pub struct Client<C, S>
+pub struct Client<S>
 where
-    C: Into<String> + Clone,
     S: Into<String> + Clone,
 {
     rdy: u32,
@@ -59,7 +60,7 @@ where
     channel: String,
     topic: String,
     addr: String,
-    config: Config<C>,
+    config: Config,
     secret: Option<S>,
     msg_channel: MsgChannel,
     cmd_channel: CmdChannel,
@@ -71,22 +72,21 @@ where
     msg_timeout: u64,
 }
 
-impl<C, S> Client<C, S>
+impl<S> Client<S>
 where
-    C: Into<String> + Clone,
     S: Into<String> + Clone,
 {
     pub fn new(
         topic: S,
         channel: S,
         addr: S,
-        config: Config<C>,
+        config: Config,
         secret: Option<S>,
         rdy: u32,
         max_attemps: u16,
         in_cmd: Receiver<ConnMsg>,
         out_info: Sender<ConnMsgInfo>,
-    ) -> Client<C, S> {
+    ) -> Client<S> {
         let (s, r): (Sender<bool>, Receiver<bool>) = channel::unbounded();
         Client {
             topic: topic.into(),
@@ -130,7 +130,6 @@ where
 
         println!("Creating conn");
         let mut conn = Conn::new(
-            self.addr.clone(),
             self.config.clone(),
             self.cmd_channel.1.clone(),
             self.msg_channel.0.clone(),
@@ -140,7 +139,6 @@ where
         println!("Conn created");
         let mut poll = Poll::new().unwrap();
         let mut evts = Events::with_capacity(1024);
-        conn.register(&mut poll);
         if let Err(e) = poll.register(&handler, CLIENT_TOKEN, Ready::writable(), PollOpt::edge()) {
             error!("registering handler");
             panic!("{}", e);
@@ -152,8 +150,148 @@ where
         conn.magic();
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         let mut last_heartbeat = Instant::now();
-        let mut tls = 0;
+        let addr: String = self.addr.clone();
+        let mut socket = connect(addr, self.config.output_buffer_size);
+        poll.register(&socket, CONNECTION, Ready::writable(), PollOpt::edge());
+        let mut tls: u8 = 0;
         loop {
+            if tls == 1 {
+                let connector = TlsConnector::new().unwrap();
+                let addr: String = self.addr.clone();
+                let mut tls_stream = connector.connect(addr.as_str(), socket).expect("failed to handle tls handshake");
+                loop {
+                    if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
+                        error!("polling tls events failed");
+                        panic!("{}", e); 
+                    }
+                    for ev in &evts {
+                        debug!("event: {:?}", ev);
+                        if ev.token() == CMD_TOKEN {
+                            if let Ok(msg) = r_close.try_recv() {
+                                match msg {
+                                    1 => {
+                                        let _ = tls_stream.shutdown();
+                                        let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
+                                        poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
+                                        return Ok(());
+                                    },
+                                    _ => {},
+                                }
+                            }
+                            continue;
+                        }
+                        if ev.token() == CONNECTION {
+                            if ev.readiness().is_readable() {
+                                match conn.read(&mut tls_stream) {
+                                    Ok(0) => {
+                                        if conn.need_response {
+                                            poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge());
+                                        }
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        if e.kind() != std::io::ErrorKind::WouldBlock {
+                                            panic!("Error on reading socket: {:?}", e);
+                                        }
+                                        if let Err(e) = self.out_info.send(ConnMsgInfo::IsConnected(ConnInfo{ connected: false, last_time: 0 })) {
+                                            panic!("{}", e);
+                                        }
+                                        break;
+                                    }
+                                    _ => {}
+                                };
+                                if conn.state != State::Started {
+                                    match conn.state {
+                                        State::Tls => {
+                                            let resp = conn
+                                                .get_response(format!(
+                                                    "[{}] tls handshake failed",
+                                                    self.addr
+                                                ))
+                                                .unwrap();
+                                            info!("[{}] tls connection: {}", self.addr, resp);
+                                            if nsqd_config.auth_required {
+                                                if self.secret.is_none() {
+                                                    error!("[{}] authentication required", self.addr);
+                                                    error!("secret token needed");
+                                                    process::exit(1)
+                                                }
+                                                conn.state = State::Auth;
+                                            } else {
+                                                conn.state = State::Subscribe;
+                                            }
+                                        }
+                                        State::Auth => {
+                                            let resp = conn
+                                                .get_response(format!(
+                                                    "[{}] authentication failed",
+                                                    self.addr
+                                                ))
+                                                .unwrap();
+                                            info!("[{}] authentication {}", self.addr, resp);
+                                            conn.state = State::Subscribe;
+                                        }
+                                        State::Subscribe => {
+                                            let resp = conn
+                                                .get_response(format!(
+                                                    "[{}] authentication failed",
+                                                    self.addr
+                                                ))
+                                                .unwrap();
+                                            info!(
+                                                "[{}] subscribe channel: {} topic: {} {}",
+                                                self.addr, self.channel, self.topic, resp
+                                            );
+                                            conn.state = State::Rdy;
+                                        }
+                                        _ => {}
+                                    }
+                                    conn.need_response = false;
+                                }
+                                poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::writable(), PollOpt::edge());
+                            } else if conn.state != State::Started {
+                                match conn.state {
+                                    State::Auth => match &self.secret {
+                                        Some(s) => {
+                                            let secret = s.clone();
+                                            conn.auth(secret.into());
+                                        }
+                                        None => {}
+                                    },
+                                    State::Subscribe => {
+                                        conn.subscribe(self.topic.clone(), self.channel.clone());
+                                    }
+                                    State::Rdy => {
+                                        conn.rdy(self.rdy);
+                                    }
+                                    _ => {}
+                                }
+                                if let Err(e) = conn.write(&mut tls_stream) {
+                                    error!("writing on socket: {:?}", e);
+                                };
+                                if conn.need_response {
+                                    poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge());
+                                } else {
+                                    poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::writable(), PollOpt::edge());
+                                };
+                            } else {
+                                if conn.heartbeat {
+                                    last_heartbeat = Instant::now();
+                                    conn.write_cmd(Nop);
+                                    if let Err(e) = conn.write(&mut tls_stream) {
+                                        error!("writing on socket: {:?}", e);
+                                    }
+                                    conn.heartbeat_done();
+                                }
+                                conn.write_messages(&mut tls_stream);
+                                poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge());
+                            }
+                        } else {
+                            conn.write_messages(&mut tls_stream);
+                        }
+                    }
+                }
+            }
             if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                 error!("polling events failed");
                 panic!("{}", e);
@@ -169,7 +307,7 @@ where
                     if let Ok(msg) = r_close.try_recv() {
                         match msg {
                             1 => {
-                                let _ = conn.close();
+                                let _ = socket.shutdown(Shutdown::Both);
                                 let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
                                 poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
                                 return Ok(());
@@ -181,10 +319,10 @@ where
                 }
                 if ev.token() == CONNECTION {
                     if ev.readiness().is_readable() {
-                        match conn.read() {
+                        match conn.read(&mut socket) {
                             Ok(0) => {
                                 if conn.need_response {
-                                    conn.reregister(&mut poll, Ready::readable());
+                                    poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
                                 }
                                 break;
                             }
@@ -213,8 +351,8 @@ where
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
                                     conn.msg_timeout = nsqd_config.msg_timeout;
                                     if nsqd_config.tls_v1 {
-                                        conn.tls_enabled();
-                                        conn.reregister(&mut poll, Ready::readable());
+                                        conn.tls_enabled(&mut tls);
+                                        poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
                                         break;
                                     };
                                     if nsqd_config.auth_required {
@@ -274,7 +412,7 @@ where
                             }
                             conn.need_response = false;
                         }
-                        conn.reregister(&mut poll, Ready::writable());
+                        poll.reregister(&socket, CONNECTION, Ready::writable(), PollOpt::edge());
                     } else if conn.state != State::Started {
                         match conn.state {
                             State::Identify => {
@@ -295,28 +433,28 @@ where
                             }
                             _ => {}
                         }
-                        if let Err(e) = conn.write() {
+                        if let Err(e) = conn.write(&mut socket) {
                             error!("writing on socket: {:?}", e);
                         };
                         if conn.need_response {
-                            conn.reregister(&mut poll, Ready::readable());
+                            poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
                         } else {
-                            conn.reregister(&mut poll, Ready::writable());
+                            poll.reregister(&socket, CONNECTION, Ready::writable(), PollOpt::edge());
                         };
                     } else {
                         if conn.heartbeat {
                             last_heartbeat = Instant::now();
                             conn.write_cmd(Nop);
-                            if let Err(e) = conn.write() {
+                            if let Err(e) = conn.write(&mut socket) {
                                 error!("writing on socket: {:?}", e);
                             }
                             conn.heartbeat_done();
                         }
-                        conn.write_messages();
-                        conn.reregister(&mut poll, Ready::readable());
+                        conn.write_messages(&mut socket);
+                        poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
                     }
                 } else {
-                    conn.write_messages();
+                    conn.write_messages(&mut socket);
                 }
             }
         }

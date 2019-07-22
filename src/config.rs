@@ -22,10 +22,7 @@ use serde::{Deserialize, Serialize};
 ///```
 ///
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Config<S>
-where
-    S: Into<String> + Clone,
-{
+pub struct Config {
     /// Identifiers sent to nsqd representing this client (consumer specific)
     ///
     /// Default: **hostname** where connection is started
@@ -106,25 +103,11 @@ where
     ///
     /// Default: **0**
     pub message_timeout: u32,
-
-    /// If None Server Cert verification is disasbled (don't use in production), if Some("") use
-    /// webpki mozilla ca list for verification, Some("private_ca_file") add private ca cert chain
-    /// for verify server cert.
-    ///
-    /// Default: Some("")
-    //#[serde(skip)]
-    //pub private_ca: String,
-
-    #[serde(skip)]
-    pub verify_server: VerifyServerCert<S>,
 }
 use hostname::get_hostname;
 
-impl<S> Default for Config<S>
-where
-    S: Into<String> + Clone,
-{
-    fn default() -> Config<S> {
+impl Default for Config {
+    fn default() -> Config {
         Config {
             client_id: get_hostname(),
             user_agent: String::from("nsq_client"),
@@ -132,6 +115,7 @@ where
             deflate: false,
             deflate_level: 6,
             snappy: false,
+            tls_v1: false,
             feature_negotiation: true,
             //heartbeat_interval: 2000,
             heartbeat_interval: 30000,
@@ -139,8 +123,6 @@ where
             output_buffer_size: 16384,
             output_buffer_timeout: 250,
             sample_rate: 0,
-            tls_v1: false,
-            verify_server: VerifyServerCert::None,
             //private_ca: String::new(),
         }
     }
@@ -164,10 +146,7 @@ pub struct NsqdConfig {
 }
 
 #[allow(dead_code)]
-impl<S> Config<S>
-where
-    S: Into<String> + Clone,
-{
+impl Config {
     /// Create default [Config](struct.Config.html)
     /// ```no-run
     /// use nsq_client::{Config};
@@ -177,7 +156,7 @@ where
     ///     assert_eq!(config, Config::default());
     /// }
     /// ```
-    pub fn new() -> Config<S> {
+    pub fn new() -> Config {
         Config {
             ..Default::default()
         }
@@ -223,29 +202,5 @@ where
     pub fn user_agent(mut self, user_agent: &str) -> Self {
         self.user_agent = user_agent.to_owned();
         self
-    }
-
-    pub fn tls(&mut self, verify_server_cert: VerifyServerCert<S>) {
-        self.tls_v1 = true;
-        self.verify_server = verify_server_cert;
-    }
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum VerifyServerCert<S>
-where
-    S: Into<String> + Clone,
-{
-    None,
-    PrivateCA(S),
-    PublicCA,
-}
-
-impl<S> Default for VerifyServerCert<S>
-where
-    S: Into<String> + Clone,
-{
-    fn default() -> Self {
-        VerifyServerCert::None
     }
 }
