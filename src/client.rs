@@ -12,7 +12,7 @@ use serde_json;
 use crate::codec::decode_msg;
 use crate::conn::{Conn, State, CONNECTION};
 use crate::config::{Config, NsqdConfig};
-use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo};
+use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo, BytesMsg};
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
@@ -31,7 +31,7 @@ impl CmdChannel {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct MsgChannel(pub Sender<BytesMut>, pub Receiver<BytesMut>);
+pub(crate) struct MsgChannel(pub Sender<BytesMsg>, pub Receiver<BytesMsg>);
 
 impl MsgChannel {
     pub fn new() -> MsgChannel {
@@ -135,6 +135,7 @@ where
             self.cmd_channel.1.clone(),
             self.msg_channel.0.clone(),
             self.out_info.clone(),
+            self.msg_timeout.clone(),
         );
         println!("Conn created");
         let mut poll = Poll::new().unwrap();
@@ -159,7 +160,7 @@ where
             // if last_heartbeat is not seen shutdown occurred.
             if last_heartbeat.elapsed() > Duration::new(45, 0) {
                 // send fake message as closed connection event.
-                let _ = self.msg_channel.0.send(BytesMut::new());
+                let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
             }
             for ev in &evts {
                 debug!("event: {:?}", ev);
@@ -168,7 +169,7 @@ where
                         match msg {
                             1 => {
                                 let _ = conn.close();
-                                let _ = self.msg_channel.0.send(BytesMut::new());
+                                let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
                                 poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
                                 return Ok(());
                             },
@@ -209,7 +210,7 @@ where
                                     nsqd_config = serde_json::from_str(&resp)
                                         .expect("failed to decode identify response");
                                     info!("[{}] configuration: {:#?}", self.addr, nsqd_config);
-                                    self.msg_timeout = nsqd_config.msg_timeout;
+                                    conn.msg_timeout = nsqd_config.msg_timeout;
                                     if nsqd_config.tls_v1 {
                                         conn.tls_enabled();
                                         conn.reregister(&mut poll, Ready::readable());
@@ -335,12 +336,14 @@ where
                 info!("Handler spawned");
                 loop {
                     if let Ok(ref mut msg) = msg_ch.recv() {
-                        if msg.len() == 0 {
+                        if msg.1.len() == 0 {
                             boxed.on_close(&mut ctx);
                             continue;
-                        }
-                        let msg = decode_msg(msg);
+                        };
+                        let timeout = msg.0;
+                        let msg = decode_msg(&mut msg.1);
                         boxed.on_msg(Msg {
+                            timeout,
                             timestamp: msg.0,
                             attemps: msg.1,
                             id: msg.2,

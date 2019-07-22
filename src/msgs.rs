@@ -86,6 +86,7 @@ pub struct Rdy(pub u32);
 
 #[derive(Debug, Clone)]
 pub struct Msg {
+    pub timeout: u64,
     pub timestamp: i64,
     pub attemps: u16,
     pub id: String,
@@ -93,7 +94,7 @@ pub struct Msg {
 }
 
 #[derive(Debug, Clone)]
-pub struct BytesMsg(pub BytesMut);
+pub struct BytesMsg(pub u64, pub BytesMut);
 
 impl NsqCmd for Auth {
     fn cmd(&self) -> String {

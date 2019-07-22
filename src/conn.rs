@@ -3,7 +3,7 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo, ConnInfo};
+use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo, ConnInfo, BytesMsg};
 use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
@@ -46,7 +46,7 @@ where
     r_buf: BytesMut,
     //send message to readers.
     //s: Sender<Msg>,
-    s: Sender<BytesMut>,
+    s: Sender<BytesMsg>,
     // tcp_stream
     socket: TcpStream,
     //receive Cmd from readers.
@@ -70,6 +70,7 @@ where
     pub state: State,
     last_time_sent: i64,
     handle: Thread,
+    pub msg_timeout: u64,
 }
 
 impl<S> Conn<S>
@@ -77,7 +78,7 @@ where
     S: Into<String> + Clone,
 {
 
-    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMut>, s_info: Sender<ConnMsgInfo>) -> Conn<S>
+    pub fn new<A>(addr: A, config: Config<S>, r: Receiver<Cmd>, s: Sender<BytesMsg>, s_info: Sender<ConnMsgInfo>, msg_timeout: u64) -> Conn<S>
     where
         A: ToSocketAddrs + Into<String> + Display + Clone,
     {
@@ -131,6 +132,7 @@ where
             s_info,
             last_time_sent: 0,
             handle: thread::current(),
+            msg_timeout: 0,
         }
     }
 
@@ -264,7 +266,7 @@ where
             //take the whole frame for buffer.
             let frame = self.r_buf.split_to(frame_size - 4);
             if frame_type == FRAME_TYPE_MESSAGE {
-                let _ = self.s.send(frame);
+                let _ = self.s.send(BytesMsg(self.msg_timeout.clone(), frame));
                 self.in_flight += 1;
                 continue;
             } else {
