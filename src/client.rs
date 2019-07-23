@@ -6,7 +6,7 @@ use std::net::Shutdown;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info};
-use native_tls::TlsConnector;
+use native_tls::{TlsConnector, HandshakeError};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
@@ -158,7 +158,42 @@ where
             if tls == 1 {
                 let connector = TlsConnector::new().unwrap();
                 let addr: String = self.addr.clone();
-                let mut tls_stream = connector.connect(addr.as_str(), socket).expect("failed to handle tls handshake");
+                let mut tls_stream = match connector.connect(addr.as_str(), socket) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        match e {
+                            HandshakeError::Failure(e) => {
+                                error!("error on tls handshake: {}", e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            },
+                            HandshakeError::WouldBlock(res) => {
+                                thread::sleep(Duration::from_millis(500));
+                                match res.handshake() {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        match e {
+                                            HandshakeError::Failure(e) => {
+                                                error!("error on tls handshake: {}", e);
+                                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                                            },
+                                            HandshakeError::WouldBlock(res) => {
+                                                thread::sleep(Duration::from_millis(500));
+                                                match res.handshake() {
+                                                    Ok(s) => s,
+                                                    Err(e) => {
+                                                        error!("error on tls handshake: {}", e);
+                                                        return Err(io::Error::new(io::ErrorKind::Other, format!("Error on tls handshacke")));
+                                                    }
+                                                }
+                                            },
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge());
                 loop {
                     if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                         error!("polling tls events failed");
