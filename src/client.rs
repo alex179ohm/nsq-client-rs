@@ -158,6 +158,7 @@ where
             if tls == 1 {
                 let connector = TlsConnector::new().unwrap();
                 let addr: String = self.addr.clone();
+                println!("addr: {}", addr);
                 let mut tls_stream = match connector.connect(addr.as_str(), socket) {
                     Ok(s) => s,
                     Err(e) => {
