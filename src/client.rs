@@ -312,10 +312,12 @@ where
                             } else {
                                 if conn.heartbeat {
                                     last_heartbeat = Instant::now();
+                                    println!("heartbeat received");
                                     conn.write_cmd(Nop);
                                     if let Err(e) = conn.write(&mut tls_stream) {
                                         error!("writing on socket: {:?}", e);
                                     }
+                                    println!("NOP sent");
                                     conn.heartbeat_done();
                                 }
                                 conn.write_messages(&mut tls_stream);
