@@ -21,8 +21,8 @@ use bytes::BytesMut;
 #[cfg(target_os = "windows")]
 use std::io::Read;
 
-const CLIENT_TOKEN: Token = Token(1);
-const CMD_TOKEN: Token = Token(2);
+const CLIENT_TOKEN: Token = Token(4589);
+const CMD_TOKEN: Token = Token(3290);
 
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);

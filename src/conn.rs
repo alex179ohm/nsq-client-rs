@@ -19,7 +19,7 @@ use std::thread::{self, Thread};
 //use std::sync::{Arc, atomic::{Ordering, AtomicBool}};
 use chrono::{DateTime, Utc};
 
-pub const CONNECTION: Token = Token(0);
+pub const CONNECTION: Token = Token(5067);
 
 #[derive(Debug, PartialEq)]
 pub enum State {
