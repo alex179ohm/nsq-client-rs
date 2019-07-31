@@ -174,7 +174,7 @@ where
                                 {
                                     loop {
                                         let buf = &mut [0; 32];
-                                        let ret = res.get_ref().write(buf) {
+                                        let ret = res.get_ref().write(buf);
                                         debug!("readed: {:?}, {:?}", ret, buf);
                                     }
                                 }
