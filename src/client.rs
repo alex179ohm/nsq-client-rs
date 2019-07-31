@@ -184,7 +184,7 @@ where
                                                 thread::sleep(Duration::from_millis(1000));
                                                 #[cfg(target_os = "windows")]
                                                 {
-                                                    let buf = &mut [0; 1024];
+                                                    let buf = &mut [0; 32];
                                                     let n = res.get_ref().read(buf);
                                                     debug!("readed: {:?}, {:?}",n,  buf);
                                                 }
