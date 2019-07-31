@@ -186,6 +186,7 @@ where
                                                 {
                                                     let buf = &mut [0, 1024];
                                                     res.get_ref().read(buf);
+                                                    debug!("readed: {:?}", buf);
                                                 }
                                                 match res.handshake() {
                                                     Ok(s) => s,
