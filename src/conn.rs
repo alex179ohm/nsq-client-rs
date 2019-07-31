@@ -213,6 +213,7 @@ impl Conn {
                 if frame_type == FRAME_TYPE_RESPONSE {
                     self.responses.push(Response::Response(s.to_owned()));
                 } else if frame_type == FRAME_TYPE_ERROR {
+                    debug!("error received: {:?}", s.to_owned());
                     self.responses.push(Response::Error(s.to_owned()));
                 }
             }
