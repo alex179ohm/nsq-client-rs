@@ -6,7 +6,7 @@ use std::net::Shutdown;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info, warn};
-use native_tls::{TlsConnector, HandshakeError};
+use native_tls::{TlsConnector, HandshakeError, TlsStream};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
 use serde_json;
@@ -180,11 +180,25 @@ where
                                             HandshakeError::WouldBlock(res) => {
                                                 warn!("socket would block");
                                                 thread::sleep(Duration::from_millis(1000));
+                                                #[cfg(target_os = "windows")]
+                                                {
+                                                    let buf = &mut [0, 1024];
+                                                    res.get_ref().read(buf);
+                                                }
                                                 match res.handshake() {
                                                     Ok(s) => s,
                                                     Err(e) => {
-                                                        error!("error on tls handshake: {}", e);
-                                                        return Err(io::Error::new(io::ErrorKind::Other, format!("Error on tls handshacke")));
+                                                        match e {
+                                                            HandshakeError::Failure(e) => {
+                                                                error!("error on tls handshake: {}", e);
+                                                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                                                            },
+                                                            HandshakeError::WouldBlock(e) => {
+                                                                warn!("socket would block");
+                                                                error!("error on tls handshake: {:?}", e);
+                                                                return Err(io::Error::new(io::ErrorKind::Other, "tls connection failed"));
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             },
