@@ -171,7 +171,17 @@ where
                             HandshakeError::WouldBlock(res) => {
                                 warn!("socket would block");
                                 #[cfg(target_os = "windows")]
-                                thread::sleep(Duration::from_millis(2000));
+                                {
+                                    loop {
+                                        let buf = &mut [0; 32];
+                                        if let Ok(ret) = res.get_ref().read(buf) {
+                                            debug!("readed: {:?}, {:?}", ret, buf);
+                                            break;
+                                        } else {
+                                            continue;
+                                        }
+                                    }
+                                }
                                 #[cfg(not(target_os = "windows"))]
                                 thread::sleep(Duration::from_millis(1000));
                                 match res.handshake() {
@@ -184,12 +194,6 @@ where
                                             },
                                             HandshakeError::WouldBlock(res) => {
                                                 warn!("socket would block");
-                                                #[cfg(target_os = "windows")]
-                                                {
-                                                    let buf = &mut [0; 32];
-                                                    let ret = res.get_ref().read(buf);
-                                                    debug!("readed: {:?}, {:?}", ret, buf);
-                                                }
                                                 #[cfg(not(target_os = "windows"))]
                                                 thread::sleep(Duration::from_millis(1000));
                                                 match res.handshake() {
