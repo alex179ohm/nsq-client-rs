@@ -18,6 +18,8 @@ use crate::msgs::{Cmd, Msg, Nop, NsqCmd, ConnMsg, ConnMsgInfo, ConnInfo, BytesMs
 use crate::reader::Consumer;
 
 use bytes::BytesMut;
+#[cfg(target_os = "windows")]
+use std::io::Read;
 
 const CLIENT_TOKEN: Token = Token(1);
 const CMD_TOKEN: Token = Token(2);
