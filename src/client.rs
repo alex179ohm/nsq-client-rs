@@ -194,7 +194,7 @@ where
                                                                 break;
                                                             }
                                                         }
-                                                        debug!("readed: {:?}, {:?}",n,  buf);
+                                                        debug!("readed: {:?}",  buf);
                                                         break;
                                                     }
                                                 }
