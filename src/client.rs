@@ -178,6 +178,8 @@ where
                                 }
                                 #[cfg(not(target_os = "windows"))]
                                 thread::sleep(Duration::from_millis(1000));
+                                #[cfg(target_os = "windows")]
+                                thread::sleep(Duration::from_millis(3000));
                                 match res.handshake() {
                                     Ok(s) => s,
                                     Err(e) => {
@@ -190,6 +192,8 @@ where
                                                 warn!("socket would block");
                                                 #[cfg(not(target_os = "windows"))]
                                                 thread::sleep(Duration::from_millis(1000));
+                                                #[cfg(target_os = "windows")]
+                                                thread::sleep(Duration::from_millis(3000));
                                                 match res.handshake() {
                                                     Ok(s) => s,
                                                     Err(e) => {
@@ -201,7 +205,7 @@ where
                                                             HandshakeError::WouldBlock(res) => {
                                                                 warn!("socket would block");
                                                                 #[cfg(target_os = "windows")]
-                                                                thread::sleep(Duration::from_millis(2000));
+                                                                thread::sleep(Duration::from_millis(3000));
                                                                 #[cfg(not(target_os = "windows"))]
                                                                 thread::sleep(Duration::from_millis(1000));
                                                                 match res.handshake() {
