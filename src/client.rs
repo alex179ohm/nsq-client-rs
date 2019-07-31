@@ -170,6 +170,9 @@ where
                             },
                             HandshakeError::WouldBlock(res) => {
                                 warn!("socket would block");
+                                #[cfg(target_os = "windows")]
+                                thread::sleep(Duration::from_millis(2000));
+                                #[cfg(not(target_os = "windows"))]
                                 thread::sleep(Duration::from_millis(1000));
                                 match res.handshake() {
                                     Ok(s) => s,
@@ -181,6 +184,9 @@ where
                                             },
                                             HandshakeError::WouldBlock(res) => {
                                                 warn!("socket would block");
+                                                #[cfg(target_os = "windows")]
+                                                thread::sleep(Duration::from_millis(2000));
+                                                #[cfg(not(target_os = "windows"))]
                                                 thread::sleep(Duration::from_millis(1000));
                                                 #[cfg(target_os = "windows")]
                                                 {
@@ -208,6 +214,9 @@ where
                                                             },
                                                             HandshakeError::WouldBlock(res) => {
                                                                 warn!("socket would block");
+                                                                #[cfg(target_os = "windows")]
+                                                                thread::sleep(Duration::from_millis(2000));
+                                                                #[cfg(not(target_os = "windows"))]
                                                                 thread::sleep(Duration::from_millis(1000));
                                                                 match res.handshake() {
                                                                     Ok(s) => s,
