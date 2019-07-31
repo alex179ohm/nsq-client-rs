@@ -170,12 +170,6 @@ where
                             },
                             HandshakeError::WouldBlock(res) => {
                                 warn!("socket would block");
-                                #[cfg(target_os = "windows")]
-                                {
-                                    let buf = &mut [0; 32];
-                                    let ret = res.get_ref().write(buf);
-                                    debug!("written: {:?}, {:?}", ret, buf);
-                                }
                                 #[cfg(not(target_os = "windows"))]
                                 thread::sleep(Duration::from_millis(1000));
                                 #[cfg(target_os = "windows")]
