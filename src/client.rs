@@ -184,9 +184,9 @@ where
                                                 thread::sleep(Duration::from_millis(1000));
                                                 #[cfg(target_os = "windows")]
                                                 {
-                                                    let buf = &mut [0, 1024];
-                                                    res.get_ref().read(buf);
-                                                    debug!("readed: {:?}", buf);
+                                                    let buf = &mut [0; 1024];
+                                                    let n = res.get_ref().read(buf);
+                                                    debug!("readed: {:?}, {:?}",n,  buf);
                                                 }
                                                 match res.handshake() {
                                                     Ok(s) => s,
