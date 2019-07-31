@@ -187,7 +187,7 @@ where
                                                 #[cfg(target_os = "windows")]
                                                 {
                                                     let buf = &mut [0; 32];
-                                                    let ret = res.get_ref.read(buf);
+                                                    let ret = res.get_ref().read(buf);
                                                     debug!("readed: {:?}, {:?}", ret, buf);
                                                 }
                                                 #[cfg(not(target_os = "windows"))]
