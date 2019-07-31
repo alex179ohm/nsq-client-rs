@@ -174,12 +174,8 @@ where
                                 {
                                     loop {
                                         let buf = &mut [0; 32];
-                                        if let Ok(ret) = res.get_ref().read(buf) {
-                                            debug!("readed: {:?}, {:?}", ret, buf);
-                                            break;
-                                        } else {
-                                            continue;
-                                        }
+                                        let ret = res.get_ref().write(buf) {
+                                        debug!("readed: {:?}, {:?}", ret, buf);
                                     }
                                 }
                                 #[cfg(not(target_os = "windows"))]
