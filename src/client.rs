@@ -407,8 +407,8 @@ where
                                     conn.msg_timeout = nsqd_config.msg_timeout;
                                     if nsqd_config.tls_v1 {
                                         conn.tls_enabled(&mut tls);
-                                        #[cfg(target_os = "windows")]
-                                        poll.deregister(&socket);
+                                        //#[cfg(target_os = "windows")]
+                                        //poll.deregister(&socket);
                                         break;
                                     };
                                     if nsqd_config.auth_required {
