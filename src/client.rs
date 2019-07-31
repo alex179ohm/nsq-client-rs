@@ -196,10 +196,16 @@ where
                                                                 error!("error on tls handshake: {}", e);
                                                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                                                             },
-                                                            HandshakeError::WouldBlock(e) => {
+                                                            HandshakeError::WouldBlock(res) => {
                                                                 warn!("socket would block");
-                                                                error!("error on tls handshake: {:?}", e);
-                                                                return Err(io::Error::new(io::ErrorKind::Other, "tls connection failed"));
+                                                                thread::sleep(Duration::from_millis(1000));
+                                                                match res.handshake() {
+                                                                    Ok(s) => s,
+                                                                    Err(e) => {
+                                                                        error!("error on tls handshake: {:?}", e);
+                                                                        return Err(io::Error::new(io::ErrorKind::Other, "tls connection failed"));
+                                                                    } 
+                                                                }
                                                             }
                                                         }
                                                     }
