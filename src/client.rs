@@ -19,7 +19,7 @@ use crate::reader::Consumer;
 
 use bytes::BytesMut;
 #[cfg(target_os = "windows")]
-use std::io::Read;
+use std::io::{Read, Write};
 
 const CLIENT_TOKEN: Token = Token(4589);
 const CMD_TOKEN: Token = Token(3290);
