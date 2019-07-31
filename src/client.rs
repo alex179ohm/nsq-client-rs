@@ -187,7 +187,7 @@ where
                                                     let buf = &mut [0; 32];
                                                     loop {
                                                         if let Err(e) = res.get_ref().read(buf) {
-                                                            if e == io::ErrorKind::WouldBlock {
+                                                            if e.kind() == io::ErrorKind::WouldBlock {
                                                                 continue;
                                                             } else {
                                                                 error!("error: {}", e);
