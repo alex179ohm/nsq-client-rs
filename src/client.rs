@@ -185,8 +185,18 @@ where
                                                 #[cfg(target_os = "windows")]
                                                 {
                                                     let buf = &mut [0; 32];
-                                                    let n = res.get_ref().read(buf);
-                                                    debug!("readed: {:?}, {:?}",n,  buf);
+                                                    loop {
+                                                        if let Err(e) = res.get_ref().read(buf) {
+                                                            if e == io::ErrorKind::WouldBlock {
+                                                                continue;
+                                                            } else {
+                                                                error!("error: {}", e);
+                                                                break;
+                                                            }
+                                                        }
+                                                        debug!("readed: {:?}, {:?}",n,  buf);
+                                                        break;
+                                                    }
                                                 }
                                                 match res.handshake() {
                                                     Ok(s) => s,
