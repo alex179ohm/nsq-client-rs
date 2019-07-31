@@ -22,7 +22,8 @@ fn main() {
     let mut c = Client::new(
         "test", // channel
         "test", // topic
-        "localhost:4150", // nsqd address
+        // "tangram-monitor.tngrm.io:4150"
+        "nsq-vodafone-1.tngrm.io:4150", // nsqd address
         config, //configuration
         None, // optional secret for authentication
         500, // rdy
