@@ -188,22 +188,6 @@ where
                                                 thread::sleep(Duration::from_millis(2000));
                                                 #[cfg(not(target_os = "windows"))]
                                                 thread::sleep(Duration::from_millis(1000));
-                                                #[cfg(target_os = "windows")]
-                                                {
-                                                    let buf = &mut [0; 32];
-                                                    loop {
-                                                        if let Err(e) = res.get_ref().read(buf) {
-                                                            if e.kind() == io::ErrorKind::WouldBlock {
-                                                                continue;
-                                                            } else {
-                                                                error!("error: {}", e);
-                                                                break;
-                                                            }
-                                                        }
-                                                        debug!("readed: {:?}",  buf);
-                                                        break;
-                                                    }
-                                                }
                                                 match res.handshake() {
                                                     Ok(s) => s,
                                                     Err(e) => {
