@@ -167,7 +167,7 @@ where
                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                             },
                             HandshakeError::WouldBlock(res) => {
-                                thread::sleep(Duration::from_millis(500));
+                                thread::sleep(Duration::from_millis(1000));
                                 match res.handshake() {
                                     Ok(s) => s,
                                     Err(e) => {
@@ -177,7 +177,7 @@ where
                                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                                             },
                                             HandshakeError::WouldBlock(res) => {
-                                                thread::sleep(Duration::from_millis(500));
+                                                thread::sleep(Duration::from_millis(1000));
                                                 match res.handshake() {
                                                     Ok(s) => s,
                                                     Err(e) => {
