@@ -5,7 +5,7 @@ use std::io;
 use std::net::Shutdown;
 
 use crossbeam::channel::{self, Receiver, Sender};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use native_tls::{TlsConnector, HandshakeError};
 
 use mio::{Events, Poll, PollOpt, Ready, Registration, Token};
@@ -167,6 +167,7 @@ where
                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                             },
                             HandshakeError::WouldBlock(res) => {
+                                warn!("socket would block");
                                 thread::sleep(Duration::from_millis(1000));
                                 match res.handshake() {
                                     Ok(s) => s,
@@ -177,6 +178,7 @@ where
                                                 return Err(io::Error::new(io::ErrorKind::Other, e));
                                             },
                                             HandshakeError::WouldBlock(res) => {
+                                                warn!("socket would block");
                                                 thread::sleep(Duration::from_millis(1000));
                                                 match res.handshake() {
                                                     Ok(s) => s,
@@ -389,7 +391,7 @@ where
                                     conn.msg_timeout = nsqd_config.msg_timeout;
                                     if nsqd_config.tls_v1 {
                                         conn.tls_enabled(&mut tls);
-                                        //poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
+                                        poll.reregister(&socket, CONNECTION, Ready::readable(), PollOpt::edge());
                                         break;
                                     };
                                     if nsqd_config.auth_required {
