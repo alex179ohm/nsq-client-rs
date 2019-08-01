@@ -119,7 +119,7 @@ impl Conn {
     }
 
     pub fn get_response(&mut self) -> Response {
-        self.responses.pop().unwrap()
+        self.responses.pop().expect("error on reading response")
     }
 
     pub fn heartbeat_done(&mut self) {
