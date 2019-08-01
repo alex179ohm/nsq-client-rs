@@ -134,7 +134,12 @@ impl Conn {
                     self.decode(n);
                     Ok(n)
                 },
-                Err(e) => Err(e),
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                    Err(e)
+                },
             };
         }
     }
