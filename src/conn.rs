@@ -129,11 +129,14 @@ impl Conn {
     pub fn sync_write<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         loop {
             match self.write(s) {
-                Ok(0) => continue,
+                Ok(0) => {
+                    debug!("written 0 bytes");
+                    Ok(0)
+                },
                 Ok(n) => Ok(n),
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
-                        warn!("socket would block");
+                        debug!("socket would block");
                         continue;
                     }
                     Err(e)
@@ -145,13 +148,17 @@ impl Conn {
     pub fn sync_read<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         loop {
             match self.read_tcp(s) {
-                Ok(0) => continue,
+                Ok(0) => {
+                    debug!("readed 0 bytes");
+                    Ok(0)
+                },
                 Ok(n) => {
                     self.decode(n);
                     Ok(n)
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
+                        debug!("socket would block");
                         continue;
                     }
                     Err(e)
