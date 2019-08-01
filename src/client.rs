@@ -172,7 +172,8 @@ where
             info!("tls connection enabled");
             let connector = TlsConnector::new().unwrap();
             info!("starting tls handshake");
-            let mut tls_stream: TlsStream<mio::net::TcpStream> = match connector.connect(&addr, socket) {
+            let addr: String = self.addr.clone().split(':').collect::<Vec<&str>>()[0].to_owned();
+            let mut tls_stream: TlsStream<mio::net::TcpStream> = match connector.connect(addr.as_str(), socket) {
                 Err(res) => {
                     match res {
                         HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("tls handshake failed: {}", e))),
