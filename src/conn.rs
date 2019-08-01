@@ -130,7 +130,10 @@ impl Conn {
         loop {
             match self.read_tcp(s) {
                 Ok(0) => continue,
-                Ok(n) => Ok(n),
+                Ok(n) => {
+                    self.decode(n);
+                    Ok(n)
+                },
                 Err(e) => Err(e),
             };
         }
