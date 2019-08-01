@@ -178,10 +178,10 @@ where
                                     Err(s) => {
                                         match s {
                                             HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("tls handshake failed: {}", e))),
-                                            HandshakeError::WouldBlock(res) => {
+                                            HandshakeError::WouldBlock(r) => {
                                                 warn!("socket would block");
                                                 thread::sleep(Duration::from_millis(1000));
-                                                res = res;
+                                                res = r;
                                                 continue;
                                             }
                                         }
@@ -230,8 +230,8 @@ where
             if let Err(e) = poll.register(tls_stream.get_ref(), CONNECTION, Ready::all(), PollOpt::edge()) {
                 return Err(io::Error::new(io::ErrorKind::Other, "failed to register tls stream"));
             }
-            let mut evts = Events::with_capacity(1024);
             loop {
+                let mut evts = Events::with_capacity(1024);
                 if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                     panic!("polling events failed: {}", e);
                 }
@@ -279,10 +279,9 @@ where
                     }
                 }
             }
-            return Ok(())
         } else {
-
             loop {
+                let mut evts = Events::with_capacity(1024);
                 if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                     error!("polling events failed");
                     panic!("{}", e);
