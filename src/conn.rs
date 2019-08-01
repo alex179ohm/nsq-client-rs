@@ -139,9 +139,9 @@ impl Conn {
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
-                        debug!("socket would block");
                         continue;
                     }
+                    error!("error on write: {}", e);
                     break Err(e)
                 },
             };
@@ -161,9 +161,9 @@ impl Conn {
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
-                        debug!("socket would block");
                         continue;
                     }
+                    error!("error on read: {}", e);
                     break Err(e)
                 },
             };
