@@ -151,7 +151,9 @@ where
         let addr: String = self.addr.clone();
         let mut socket = connect(addr.clone(), self.config.output_buffer_size);
         info!("send magic");
-        conn.magic(&mut socket);
+        if let Err(e) = conn.magic(&mut socket) {
+            error!("sending magic: {:?}", e);
+        };
         info!("send identify");
         conn.identify(&mut socket);
         info!("read indentify response");
