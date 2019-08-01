@@ -170,50 +170,23 @@ where
                             },
                             HandshakeError::WouldBlock(res) => {
                                 warn!("socket would block");
-                                #[cfg(not(target_os = "windows"))]
                                 thread::sleep(Duration::from_millis(1000));
-                                #[cfg(target_os = "windows")]
-                                thread::sleep(Duration::from_millis(3000));
-                                match res.handshake() {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        match e {
-                                            HandshakeError::Failure(e) => {
-                                                error!("error on tls handshake: {}", e);
-                                                return Err(io::Error::new(io::ErrorKind::Other, e));
-                                            },
-                                            HandshakeError::WouldBlock(res) => {
-                                                warn!("socket would block");
-                                                #[cfg(not(target_os = "windows"))]
-                                                thread::sleep(Duration::from_millis(1000));
-                                                #[cfg(target_os = "windows")]
-                                                thread::sleep(Duration::from_millis(3000));
-                                                match res.handshake() {
-                                                    Ok(s) => s,
-                                                    Err(e) => {
-                                                        match e {
-                                                            HandshakeError::Failure(e) => {
-                                                                error!("error on tls handshake: {}", e);
-                                                                return Err(io::Error::new(io::ErrorKind::Other, e));
-                                                            },
-                                                            HandshakeError::WouldBlock(res) => {
-                                                                warn!("socket would block");
-                                                                #[cfg(target_os = "windows")]
-                                                                thread::sleep(Duration::from_millis(3000));
-                                                                #[cfg(not(target_os = "windows"))]
-                                                                thread::sleep(Duration::from_millis(1000));
-                                                                match res.handshake() {
-                                                                    Ok(s) => s,
-                                                                    Err(e) => {
-                                                                        error!("error on tls handshake: {:?}", e);
-                                                                        return Err(io::Error::new(io::ErrorKind::Other, "tls connection failed"));
-                                                                    } 
-                                                                }
-                                                            }
-                                                        }
-                                                    }
+                                let mut res = res;
+                                loop {
+                                    match res.handshake() {
+                                        Ok(s) => break s,
+                                        Err(e) => {
+                                            match e {
+                                                HandshakeError::Failure(e) => {
+                                                    error!("error on tls handshake: {}", e);
+                                                    return Err(io::Error::new(io::ErrorKind::Other, e));
+                                                },
+                                                HandshakeError::WouldBlock(r) => {
+                                                    thread::sleep(Duration::from_millis(1000));
+                                                    res = r;
+                                                    continue;
                                                 }
-                                            },
+                                            }
                                         }
                                     }
                                 }
