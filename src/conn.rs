@@ -259,6 +259,7 @@ impl Conn {
                 Ok(0)
             }
             Ok(n) => {
+                debug!("written: {:?}", self.w_buf);
                 self.w_buf.clear();
                 Ok(n)
             }

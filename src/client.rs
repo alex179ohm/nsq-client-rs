@@ -150,6 +150,7 @@ where
         let mut last_heartbeat = Instant::now();
         let addr: String = self.addr.clone();
         let mut socket = connect(addr.clone(), self.config.output_buffer_size);
+        info!("send magic");
         conn.magic(&mut socket);
         info!("send identify");
         conn.identify(&mut socket);
