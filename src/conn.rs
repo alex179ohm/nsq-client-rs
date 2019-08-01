@@ -136,8 +136,8 @@ impl Conn {
                         continue;
                     }
                     Err(e)
-                }
-            }
+                },
+            };
         }
     }
 
