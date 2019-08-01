@@ -94,28 +94,28 @@ impl Conn {
 
     pub fn magic<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         write_magic(&mut self.w_buf, VERSION);
-        self.write(s)
+        self.sync_write(s)
     }
 
     pub fn identify<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         let config = serde_json::to_string(&self.config).unwrap();
         self.write_cmd(Identify(config).as_cmd());
-        self.write(s)
+        self.sync_write(s)
     }
 
     pub fn auth<STREAM: Read + Write>(&mut self, secret: String, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Auth(secret));
-        self.write(s)
+        self.sync_write(s)
     }
 
     pub fn subscribe<STREAM: Read + Write>(&mut self, topic: String, channel: String, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Subscribe(topic, channel));
-        self.write(s)
+        self.sync_write(s)
     }
 
     pub fn rdy<STREAM: Read + Write>(&mut self, rdy: u32, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Rdy(rdy));
-        self.write(s)
+        self.sync_write(s)
     }
 
     pub fn get_response(&mut self) -> Response {
@@ -124,6 +124,21 @@ impl Conn {
 
     pub fn heartbeat_done(&mut self) {
         self.heartbeat = false;
+    }
+
+    pub fn sync_write<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
+        loop {
+            match self.write(s) {
+                Ok(0) => Ok(0),
+                Ok(n) => Ok(n),
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                    Err(e)
+                }
+            }
+        }
     }
 
     pub fn sync_read<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
