@@ -248,6 +248,7 @@ impl Conn {
             Ok(0) => Ok(0),
             Ok(b) => {
                 self.r_buf.extend_from_slice(&buf.as_slice()[..b]);
+                debug!("readed: {:?}", self.r_buf);
                 self.decode(b);
                 //buf.clear();
                 Ok(b)
