@@ -137,15 +137,6 @@ where
             self.out_info.clone(),
             self.msg_timeout.clone(),
         );
-        let mut poll = Poll::new().unwrap();
-        if let Err(e) = poll.register(&handler, CLIENT_TOKEN, Ready::writable(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
-        if let Err(e) = poll.register(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge()) {
-            error!("registering handler");
-            panic!("{}", e);
-        }
         let mut nsqd_config: NsqdConfig = NsqdConfig::default();
         let mut last_heartbeat = Instant::now();
         let addr: String = self.addr.clone();
@@ -240,8 +231,17 @@ where
             if let Err(e) = conn.rdy(self.rdy, &mut tls_stream) {
                 return Err(e);
             }
+            let mut poll = Poll::new().unwrap();
             if let Err(e) = poll.register(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge()) {
                 return Err(io::Error::new(io::ErrorKind::Other, format!("failed to register tls stream: {}", e)));
+            }
+            if let Err(e) = poll.register(&handler, CLIENT_TOKEN, Ready::writable(), PollOpt::edge()) {
+                error!("registering handler");
+                panic!("{}", e);
+            }
+            if let Err(e) = poll.register(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge()) {
+                error!("registering handler");
+                panic!("{}", e);
             }
             let mut evts = Events::with_capacity(1024);
             loop {
@@ -305,6 +305,18 @@ where
             }
             return Ok(());
         } else {
+            let mut poll = Poll::new().unwrap();
+            if let Err(e) = poll.register(&socket, CONNECTION, Ready::readable(), PollOpt::edge()) {
+                return Err(io::Error::new(io::ErrorKind::Other, format!("failed to register tls stream: {}", e)));
+            }
+            if let Err(e) = poll.register(&handler, CLIENT_TOKEN, Ready::writable(), PollOpt::edge()) {
+                error!("registering handler");
+                panic!("{}", e);
+            }
+            if let Err(e) = poll.register(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge()) {
+                error!("registering handler");
+                panic!("{}", e);
+            }
             let mut evts = Events::with_capacity(1024);
             loop {
                 if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
