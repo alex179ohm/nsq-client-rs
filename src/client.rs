@@ -270,24 +270,35 @@ where
                     if ev.token() == CONNECTION {
                         if ev.readiness() == Ready::readable() {
                             if conn.heartbeat {
+                                debug!("heartbeat");
                                 last_heartbeat = Instant::now();
                                 conn.write_cmd(Nop);
-                                if let Err(e) = conn.write(&mut tls_stream) {
+                                if let Err(e) = conn.sync_write(&mut tls_stream) {
                                     error!("writing on socket: {:?}", e);
+                                    return Err(e);
                                 }
+                                debug!("heartbeat done");
                                 conn.heartbeat_done();
                             }
                             if let Err(e) = conn.read(&mut tls_stream) {
                                 return Err(e);
                             }
                             if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::writable(), PollOpt::edge()) {
-                                panic!("error on reregister tls stream: {}", e);
+                                error!("error on reregister tls stream: {}", e);
+                                return Err(io::Error::new(io::ErrorKind::Other, format!("poll event: {}", e)));
                             }
                         } else {
                             conn.write_messages(&mut tls_stream);
                             if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge()) {
-                                panic!("error on reregister tls stream: {}", e);
+                                error!("error on reregister tls stream: {}", e);
+                                return Err(io::Error::new(io::ErrorKind::Other, format!("poll event: {}", e)));
                             }
+                        }
+                    }
+                    if ev.token() == CLIENT_TOKEN {
+                        conn.write_messages(&mut tls_stream);
+                        if let Err(e) = poll.reregister(tls_stream.get_ref(), CLIENT_TOKEN, Ready::all(), PollOpt::edge()) {
+
                         }
                     }
                 }
