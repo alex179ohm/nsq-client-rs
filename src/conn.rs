@@ -9,7 +9,7 @@ use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, Sender};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use mio::{net::TcpStream, Poll, PollOpt, Ready, Token};
 use std::fmt::Display;
 use std::io::{self, Read, Write};
@@ -129,10 +129,11 @@ impl Conn {
     pub fn sync_write<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         loop {
             match self.write(s) {
-                Ok(0) => Ok(0),
+                Ok(0) => continue,
                 Ok(n) => Ok(n),
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
+                        warn!("socket would block");
                         continue;
                     }
                     Err(e)
