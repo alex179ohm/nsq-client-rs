@@ -94,6 +94,7 @@ impl Conn {
 
     pub fn magic<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         write_magic(&mut self.w_buf, VERSION);
+        debug!("write to buf: {:?}", self.w_buf);
         self.sync_write(s)
     }
 
@@ -139,6 +140,7 @@ impl Conn {
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
+                        debug!("socket would block");
                         continue;
                     }
                     error!("error on write: {}", e);
