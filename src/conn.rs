@@ -131,15 +131,18 @@ impl Conn {
             match self.write(s) {
                 Ok(0) => {
                     debug!("written 0 bytes");
-                    Ok(0)
+                    break Ok(0)
                 },
-                Ok(n) => Ok(n),
+                Ok(n) => {
+                    debug!("written {} bytes", n);
+                    break Ok(n)
+                },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         debug!("socket would block");
                         continue;
                     }
-                    Err(e)
+                    break Err(e)
                 },
             };
         }
@@ -150,18 +153,18 @@ impl Conn {
             match self.read_tcp(s) {
                 Ok(0) => {
                     debug!("readed 0 bytes");
-                    Ok(0)
+                    break Ok(0)
                 },
                 Ok(n) => {
                     self.decode(n);
-                    Ok(n)
+                    break Ok(n)
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         debug!("socket would block");
                         continue;
                     }
-                    Err(e)
+                    break Err(e)
                 },
             };
         }
