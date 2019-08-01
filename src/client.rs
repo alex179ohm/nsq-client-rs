@@ -240,11 +240,11 @@ where
             if let Err(e) = conn.rdy(self.rdy, &mut tls_stream) {
                 return Err(e);
             }
-            if let Err(e) = poll.register(tls_stream.get_ref(), CONNECTION, Ready::all(), PollOpt::edge()) {
-                return Err(io::Error::new(io::ErrorKind::Other, "failed to register tls stream"));
+            if let Err(e) = poll.register(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge()) {
+                return Err(io::Error::new(io::ErrorKind::Other, format!("failed to register tls stream: {}", e)));
             }
+            let mut evts = Events::with_capacity(1024);
             loop {
-                let mut evts = Events::with_capacity(1024);
                 if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                     panic!("polling events failed: {}", e);
                 }
@@ -252,7 +252,7 @@ where
                     // send fake message as closed connection event.
                     let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
                 }
-                for ev in evts {
+                for ev in &evts {
                     if ev.token() == CMD_TOKEN {
                         if let Ok(msg) = r_close.try_recv() {
                             match msg {
@@ -280,21 +280,22 @@ where
                             if let Err(e) = conn.read(&mut tls_stream) {
                                 return Err(e);
                             }
-                            if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::all(), PollOpt::edge()) {
+                            if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::writable(), PollOpt::edge()) {
                                 panic!("error on reregister tls stream: {}", e);
                             }
                         } else {
                             conn.write_messages(&mut tls_stream);
-                            if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::all(), PollOpt::edge()) {
+                            if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge()) {
                                 panic!("error on reregister tls stream: {}", e);
                             }
                         }
                     }
                 }
             }
+            return Ok(());
         } else {
+            let mut evts = Events::with_capacity(1024);
             loop {
-                let mut evts = Events::with_capacity(1024);
                 if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
                     error!("polling events failed");
                     panic!("{}", e);
