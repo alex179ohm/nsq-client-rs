@@ -151,7 +151,9 @@ where
         let addr: String = self.addr.clone();
         let mut socket = connect(addr.clone(), self.config.output_buffer_size);
         conn.magic(&mut socket);
+        info!("send identify");
         conn.identify(&mut socket);
+        info!("read indentify response");
         if let Err(e) = conn.sync_read(&mut socket) {
             return Err(e);
         }
@@ -161,9 +163,12 @@ where
                 panic!("Error on identify: {}", s);
             }
         };
+        info!("readed indentify response: {}", resp);
         nsqd_config = serde_json::from_str(&resp).expect("failed to decode server configuration");
         if nsqd_config.tls_v1 {
+            info!("tls connection enabled");
             let connector = TlsConnector::new().unwrap();
+            info!("starting tls handshake");
             let mut tls_stream: TlsStream<mio::net::TcpStream> = match connector.connect(&addr, socket) {
                 Err(res) => {
                     match res {
@@ -193,6 +198,7 @@ where
                 },
                 Ok(s) => s,
             };
+            info!("read tls handshake response");
             if let Err(e) = conn.sync_read(&mut tls_stream) {
                 return Err(e);
             }
@@ -201,7 +207,7 @@ where
             }
             if nsqd_config.auth_required {
                 if self.secret.is_none() {
-                    panic!("Auth secret required");
+                    return Err(io::Error::new(io::ErrorKind::Other, "Auth secret required"));
                 }
                 if let Some(s) = &self.secret {
                     conn.auth(s.clone().into(), &mut tls_stream);
