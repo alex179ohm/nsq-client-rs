@@ -198,7 +198,8 @@ where
                 };
                 poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::readable(), PollOpt::edge());
                 loop {
-                    if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
+                    //if let Err(e) = poll.poll(&mut evts, Some(Duration::new(45, 0))) {
+                    if let Err(e) = poll.poll(&mut evts, None) {
                         error!("polling tls events failed");
                         panic!("{}", e); 
                     }
