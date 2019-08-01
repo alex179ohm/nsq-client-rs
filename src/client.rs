@@ -173,6 +173,7 @@ where
                                 thread::sleep(Duration::from_millis(1000));
                                 let mut res = res;
                                 loop {
+                                    warn!("try handshake");
                                     match res.handshake() {
                                         Ok(s) => break s,
                                         Err(e) => {
@@ -182,6 +183,7 @@ where
                                                     return Err(io::Error::new(io::ErrorKind::Other, e));
                                                 },
                                                 HandshakeError::WouldBlock(r) => {
+                                                    warn!("socket would block");
                                                     thread::sleep(Duration::from_millis(1000));
                                                     res = r;
                                                     continue;
