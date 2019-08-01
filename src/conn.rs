@@ -18,6 +18,7 @@ use std::process;
 use std::thread::{self, Thread};
 //use std::sync::{Arc, atomic::{Ordering, AtomicBool}};
 use chrono::{DateTime, Utc};
+use net2::TcpStreamExt;
 
 pub const CONNECTION: Token = Token(5067);
 
@@ -91,59 +92,48 @@ impl Conn {
 //        Ok(())
 //    }
 
-    pub fn magic(&mut self) {
+    pub fn magic<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         write_magic(&mut self.w_buf, VERSION);
-        self.state = State::Identify;
+        self.write(s)
     }
 
-    pub fn identify(&mut self) {
+    pub fn identify<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         let config = serde_json::to_string(&self.config).unwrap();
         self.write_cmd(Identify(config).as_cmd());
-        self.state = State::Identify;
-        self.need_response = true;
+        self.write(s)
     }
 
-    pub fn auth(&mut self, secret: String) {
+    pub fn auth<STREAM: Read + Write>(&mut self, secret: String, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Auth(secret));
-        self.state = State::Auth;
-        self.need_response = true;
+        self.write(s)
     }
 
-    pub fn subscribe(&mut self, topic: String, channel: String) {
+    pub fn subscribe<STREAM: Read + Write>(&mut self, topic: String, channel: String, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Subscribe(topic, channel));
-        self.state = State::Subscribe;
-        self.need_response = true;
+        self.write(s)
     }
 
-    pub fn rdy(&mut self, rdy: u32) {
+    pub fn rdy<STREAM: Read + Write>(&mut self, rdy: u32, s: &mut STREAM) -> io::Result<usize> {
         self.write_cmd(Rdy(rdy));
-        self.state = State::Started;
-        self.need_response = false;
+        self.write(s)
     }
 
-    pub fn tls_enabled(&mut self, tls: &mut u8) {
-        *tls = 1;
-        debug!("tls enabled");
-        self.state = State::Tls;
-    }
-
-//    pub fn register(&mut self, poll: &mut Poll) {
-//        poll.register(&self.socket, CONNECTION, Ready::writable(), PollOpt::edge())
-//            .expect("cannot register socket on poll");
-//    }
-//
-//    pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
-//        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge())
-//            .expect("cannot reregister socket on poll")
-//    }
-
-    pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
-        //self.poll_response();
-        get_response(self.responses.pop().unwrap(), on_err)
+    pub fn get_response(&mut self) -> Response {
+        self.responses.pop().unwrap()
     }
 
     pub fn heartbeat_done(&mut self) {
         self.heartbeat = false;
+    }
+
+    pub fn sync_read<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
+        loop {
+            match self.read_tcp(s) {
+                Ok(0) => continue,
+                Ok(n) => Ok(n),
+                Err(e) => Err(e),
+            };
+        }
     }
 
     pub fn read<STREAM: Read + Write>(&mut self, socket: &mut STREAM) -> io::Result<usize> {
@@ -308,6 +298,62 @@ where
     loop {
         let addr = addrs.next().expect("could not resove addr");
         match socket_connect(addr) {
+            Ok(stream) => {
+                if let Err(e) = stream.set_recv_buffer_size(output_buffer_size as usize)
+                {
+                    panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
+                }
+                break stream;
+            }
+            Err(e) => {
+                error!("[{}] error on connect to nsqd: {:?}", addr, e);
+                if let Some(timeout) = backoff.next_backoff() {
+                    thread::sleep(timeout);
+                }
+            }
+        }
+    }
+}
+
+pub fn sync_socket_connect(addr: SocketAddr) -> std::io::Result<std::net::TcpStream> {
+    let tcp = if cfg!(windows) {
+        let tcp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 4150);
+        debug!("{:?}", tcp_addr);
+        net2::TcpBuilder::new_v4()
+            .unwrap()
+            .bind(tcp_addr)
+            .expect("failed to create and bind tcp stream")
+            .to_tcp_stream()
+            .unwrap()
+    } else {
+        net2::TcpBuilder::new_v4()
+            .expect("failed to create tcp stream")
+            .to_tcp_stream()
+            .unwrap()
+    };
+    info!("[{}] trying to connect to nsqd server", addr);
+    if let Err(e) = tcp.connect(&addr) {
+        return Err(e)
+    }
+    Ok(tcp)
+}
+
+pub fn sync_connect<A>(addr: A, output_buffer_size: u64) -> std::net::TcpStream
+where
+    A: ToSocketAddrs + Display + Clone,
+{
+//    let server_name: String = addr.clone().into();
+    let mut addrs = match addr.to_socket_addrs() {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            error!("[{}] error on lookup: {}", addr, e);
+            process::exit(1);
+        }
+    };
+    let mut backoff = ExponentialBackoff::default();
+    loop {
+        let addr = addrs.next().expect("could not resove addr");
+        match sync_socket_connect(addr) {
             Ok(stream) => {
                 if let Err(e) = stream.set_recv_buffer_size(output_buffer_size as usize)
                 {
