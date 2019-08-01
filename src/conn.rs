@@ -292,6 +292,9 @@ impl Conn {
                 Ok(n)
             }
             Err(e) => {
+                if e.kind() == io::ErrorKind::WouldBlock {
+                    return Err(e);
+                }
                 self.w_buf.clear();
                 Err(e)
             }
