@@ -94,6 +94,7 @@ impl Conn {
 
     pub fn magic<STREAM: Read + Write>(&mut self, s: &mut STREAM) -> io::Result<usize> {
         write_magic(&mut self.w_buf, VERSION);
+        debug!("magic written on buffer: {:?}", self.w_buf);
         self.sync_write(s)
     }
 
