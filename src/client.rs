@@ -185,7 +185,10 @@ where
                                     Ok(s) => break s,
                                     Err(s) => {
                                         match s {
-                                            HandshakeError::Failure(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("tls handshake failed: {}", e))),
+                                            HandshakeError::Failure(e) => {
+                                                error!("handshake failed: {}", e);
+                                                return Err(io::Error::new(io::ErrorKind::Other, format!("tls handshake failed: {}", e)))
+                                            },
                                             HandshakeError::WouldBlock(r) => {
                                                 warn!("socket would block");
                                                 thread::sleep(Duration::from_millis(1000));
