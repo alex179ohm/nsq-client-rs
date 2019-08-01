@@ -269,6 +269,9 @@ where
                     }
                     if ev.token() == CONNECTION {
                         if ev.readiness() == Ready::readable() {
+                            if let Err(e) = conn.read(&mut tls_stream) {
+                                return Err(e);
+                            }
                             if conn.heartbeat {
                                 debug!("heartbeat");
                                 last_heartbeat = Instant::now();
@@ -279,9 +282,6 @@ where
                                 }
                                 debug!("heartbeat done");
                                 conn.heartbeat_done();
-                            }
-                            if let Err(e) = conn.read(&mut tls_stream) {
-                                return Err(e);
                             }
                             if let Err(e) = poll.reregister(tls_stream.get_ref(), CONNECTION, Ready::writable(), PollOpt::edge()) {
                                 error!("error on reregister tls stream: {}", e);
