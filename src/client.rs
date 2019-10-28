@@ -118,22 +118,38 @@ where
     pub fn run(&mut self) -> io::Result<()> {
         let (handler, set_readiness) = Registration::new2();
         let r_sentinel = self.sentinel.1.clone();
-        thread::spawn(move || loop {
-            if let Ok(_ok) = r_sentinel.recv() {
-                if let Err(e) = set_readiness.set_readiness(Ready::writable()) {
-                    error!("error on handles waker: {}", e);
+        let CONN1 = CONNECTED.clone();
+        thread::spawn(move || {
+            let lock = &*CONN1;
+            loop {
+                let connected = lock.lock().unwrap();
+                if *connected == false {
+                    break;
+                }
+                if let Ok(_ok) = r_sentinel.recv() {
+                    if let Err(e) = set_readiness.set_readiness(Ready::writable()) {
+                        error!("error on handles waker: {}", e);
+                    }
                 }
             }
         });
         let (cmd_handler, cmd_readiness) = Registration::new2();
         let r_cmd = self.in_cmd.clone();
         let (s_close, r_close): (Sender<u32>, Receiver<u32>) = channel::unbounded();
-        thread::spawn(move || loop {
-            if let Ok(msg) = r_cmd.recv() {
-                println!("connection msg received: {:?}", msg);
-                let _ = s_close.send(1);
-                cmd_readiness.set_readiness(Ready::readable());
-            } 
+        let CONN2 = CONNECTED.clone();
+        thread::spawn(move || {
+            let lock = &*CONN2;
+            loop {
+                let connected = lock.lock().unwrap();
+                if *connected == false {
+                    break;
+                }
+                if let Ok(msg) = r_cmd.recv() {
+                    println!("connection msg received: {:?}", msg);
+                    let _ = s_close.send(1);
+                    cmd_readiness.set_readiness(Ready::readable());
+                } 
+            }
         });
 
         println!("Creating conn");
