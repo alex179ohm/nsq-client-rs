@@ -534,12 +534,14 @@ where
                 loop {
                     let mut connected = lock.lock().unwrap();
                     if *connected == false {
+                        debug!("closing thread");
                         break;
                     }
                     if let Ok(ref mut msg) = msg_ch.recv() {
                         if msg.1.len() == 0 {
-                            boxed.on_close(&mut ctx);
+                            debug!("closing thread");
                             *connected = false;
+                            boxed.on_close(&mut ctx);
                             break;
                         };
                         debug!("I'm on loop");
