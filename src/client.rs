@@ -540,7 +540,7 @@ where
                         if msg.1.len() == 0 {
                             boxed.on_close(&mut ctx);
                             *connected = false;
-                            continue;
+                            break;
                         };
                         debug!("I'm on loop");
                         let timeout = msg.0;
