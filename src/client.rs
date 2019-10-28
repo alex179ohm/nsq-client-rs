@@ -530,6 +530,7 @@ where
                             info!("I'm on loop");
                             continue;
                         };
+                        debug!("I'm on loop");
                         let timeout = msg.0;
                         let msg = decode_msg(&mut msg.1);
                         boxed.on_msg(Msg {
