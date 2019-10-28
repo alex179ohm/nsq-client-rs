@@ -209,8 +209,14 @@ where
                             if let Ok(msg) = r_close.try_recv() {
                                 match msg {
                                     1 => {
-                                        let _ = tls_stream.shutdown();
-                                        let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
+                                        match tls_stream.shutdown() {
+                                            Ok(_) => debug!("TLS Connection Closed"),
+                                            Err(e) => error!("Error on TLS Closing: {:?}", e),
+                                        }
+                                        match self.msg_channel.0.send(BytesMsg(0, BytesMut::new())) {
+                                            Ok(_) => debug!("Disconnet message sent to agent"),
+                                            Err(e) => error!("Error sending closing message: {:?}", e),
+                                        }
                                         poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
                                         return Ok(());
                                     },
