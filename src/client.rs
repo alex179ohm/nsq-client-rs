@@ -521,6 +521,7 @@ where
                     if let Ok(ref mut msg) = msg_ch.recv() {
                         if msg.1.len() == 0 {
                             boxed.on_close(&mut ctx);
+                            info!("I'm on loop");
                             continue;
                         };
                         let timeout = msg.0;
