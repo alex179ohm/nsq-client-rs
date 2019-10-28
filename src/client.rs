@@ -3,6 +3,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::io;
 use std::net::Shutdown;
+use std::sync::{Mutex, Arc};
+use lazy_static::lazy_static;
 
 use crossbeam::channel::{self, Receiver, Sender};
 use log::{debug, error, info, warn};
@@ -23,6 +25,10 @@ use std::io::{Read, Write};
 
 const CLIENT_TOKEN: Token = Token(4589);
 const CMD_TOKEN: Token = Token(3290);
+
+lazy_static!{
+    static ref CONNECTED: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct CmdChannel(pub Sender<Cmd>, pub Receiver<Cmd>);
@@ -520,16 +526,21 @@ where
             let sentinel = self.sentinel.0.clone();
             let max_attemps = self.max_attemps;
             let conn_s = self.connected_r.clone();
+            let CONNECTED_VAR = CONNECTED.clone();
             thread::spawn(move || {
                 let mut ctx = Context::new(cmd, sentinel);
+                let lock = &*CONNECTED_VAR;
                 info!("Handler spawned");
                 loop {
+                    let mut connected = lock.lock().unwrap();
+                    if *connected == false {
+                        break;
+                    }
                     if let Ok(ref mut msg) = msg_ch.recv() {
                         if msg.1.len() == 0 {
                             boxed.on_close(&mut ctx);
-                            info!("I'm on loop");
-                            info!("break");
-                            break;
+                            *connected = false;
+                            continue;
                         };
                         debug!("I'm on loop");
                         let timeout = msg.0;
