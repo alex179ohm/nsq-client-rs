@@ -528,6 +528,7 @@ where
                         if msg.1.len() == 0 {
                             boxed.on_close(&mut ctx);
                             info!("I'm on loop");
+                            info!("break");
                             break;
                         };
                         debug!("I'm on loop");
