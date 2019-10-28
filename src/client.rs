@@ -345,16 +345,19 @@ where
             for ev in &evts {
                 debug!("event: {:?}", ev);
                 if ev.token() == CMD_TOKEN {
-                    if let Ok(msg) = r_close.try_recv() {
-                        match msg {
-                            1 => {
-                                let _ = socket.shutdown(Shutdown::Both);
-                                let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
-                                poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
-                                return Ok(());
-                            },
-                            _ => {},
-                        }
+                    match r_close.try_recv() {
+                        Ok(msg) => {
+                            match msg {
+                                1 => {
+                                    let _ = socket.shutdown(Shutdown::Both);
+                                    let _ = self.msg_channel.0.send(BytesMsg(0, BytesMut::new()));
+                                    poll.reregister(&cmd_handler, CMD_TOKEN, Ready::all(), PollOpt::edge());
+                                    return Ok(());
+                                },
+                                _ => {},
+                            }
+                        },
+                        Err(e) => error!("error on Disconnect: {:?}", e),
                     }
                     continue;
                 }
