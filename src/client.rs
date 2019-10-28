@@ -122,14 +122,14 @@ where
         thread::spawn(move || {
             let lock = &*CONN1;
             loop {
-                let connected = lock.lock().unwrap();
-                if *connected == false {
-                    break;
-                }
                 if let Ok(_ok) = r_sentinel.recv() {
                     if let Err(e) = set_readiness.set_readiness(Ready::writable()) {
                         error!("error on handles waker: {}", e);
                     }
+                }
+                let connected = lock.lock().unwrap();
+                if *connected == false {
+                    break;
                 }
             }
         });
@@ -140,15 +140,15 @@ where
         thread::spawn(move || {
             let lock = &*CONN2;
             loop {
-                let connected = lock.lock().unwrap();
-                if *connected == false {
-                    break;
-                }
                 if let Ok(msg) = r_cmd.recv() {
                     println!("connection msg received: {:?}", msg);
                     let _ = s_close.send(1);
                     cmd_readiness.set_readiness(Ready::readable());
                 } 
+                let connected = lock.lock().unwrap();
+                if *connected == false {
+                    break;
+                }
             }
         });
 
