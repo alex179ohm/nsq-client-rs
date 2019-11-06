@@ -3,7 +3,9 @@ use crate::codec::{
     FRAME_TYPE_RESPONSE, HEADER_LENGTH, HEARTBEAT,
 };
 use crate::config::Config;
-use crate::msgs::{Auth, Cmd, Identify, NsqCmd, Rdy, Subscribe, VERSION, ConnMsgInfo, ConnInfo, BytesMsg};
+use crate::msgs::{
+    Auth, BytesMsg, Cmd, ConnInfo, ConnMsgInfo, Identify, NsqCmd, Rdy, Subscribe, VERSION,
+};
 //use crate::tls::TlsSession;
 use backoff::{backoff::Backoff, ExponentialBackoff};
 use byteorder::{BigEndian, ByteOrder};
@@ -64,8 +66,13 @@ pub struct Conn {
 }
 
 impl Conn {
-
-    pub fn new(config: Config, r: Receiver<Cmd>, s: Sender<BytesMsg>, s_info: Sender<ConnMsgInfo>, msg_timeout: u64) -> Conn {
+    pub fn new(
+        config: Config,
+        r: Receiver<Cmd>,
+        s: Sender<BytesMsg>,
+        s_info: Sender<ConnMsgInfo>,
+        msg_timeout: u64,
+    ) -> Conn {
         Conn {
             r_buf: BytesMut::new(),
             w_buf: BytesMut::new(),
@@ -86,10 +93,10 @@ impl Conn {
         }
     }
 
-//    pub fn close(&mut self) -> io::Result<()> {
-//        let _ = self.socket.shutdown(Shutdown::Both);
-//        Ok(())
-//    }
+    //    pub fn close(&mut self) -> io::Result<()> {
+    //        let _ = self.socket.shutdown(Shutdown::Both);
+    //        Ok(())
+    //    }
 
     pub fn magic(&mut self) {
         write_magic(&mut self.w_buf, VERSION);
@@ -127,15 +134,15 @@ impl Conn {
         self.state = State::Tls;
     }
 
-//    pub fn register(&mut self, poll: &mut Poll) {
-//        poll.register(&self.socket, CONNECTION, Ready::writable(), PollOpt::edge())
-//            .expect("cannot register socket on poll");
-//    }
-//
-//    pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
-//        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge())
-//            .expect("cannot reregister socket on poll")
-//    }
+    //    pub fn register(&mut self, poll: &mut Poll) {
+    //        poll.register(&self.socket, CONNECTION, Ready::writable(), PollOpt::edge())
+    //            .expect("cannot register socket on poll");
+    //    }
+    //
+    //    pub fn reregister(&mut self, poll: &mut Poll, interest: Ready) {
+    //        poll.reregister(&self.socket, CONNECTION, interest, PollOpt::edge())
+    //            .expect("cannot reregister socket on poll")
+    //    }
 
     pub fn get_response(&mut self, on_err: String) -> Result<String, ()> {
         //self.poll_response();
@@ -248,10 +255,10 @@ impl Conn {
             return;
         }
         if msg.msg.len() == 1 {
-            write_msg(&mut self.w_buf, &msg.msg[0]);
+            write_msg(&mut self.w_buf, msg.msg[0].clone());
             return;
         }
-        write_mmsg(&mut self.w_buf, &msg.msg);
+        write_mmsg(&mut self.w_buf, msg.msg);
     }
 
     pub fn write_tcp<STREAM: Read + Write>(&mut self, socket: &mut STREAM) -> io::Result<usize> {
@@ -296,7 +303,7 @@ pub fn connect<A>(addr: A, output_buffer_size: u64) -> TcpStream
 where
     A: ToSocketAddrs + Display + Clone,
 {
-//    let server_name: String = addr.clone().into();
+    //    let server_name: String = addr.clone().into();
     let mut addrs = match addr.to_socket_addrs() {
         Ok(addrs) => addrs,
         Err(e) => {
@@ -309,8 +316,7 @@ where
         let addr = addrs.next().expect("could not resove addr");
         match socket_connect(addr) {
             Ok(stream) => {
-                if let Err(e) = stream.set_recv_buffer_size(output_buffer_size as usize)
-                {
+                if let Err(e) = stream.set_recv_buffer_size(output_buffer_size as usize) {
                     panic!("[{}] error on setting socket buffer size: {:?}", addr, e);
                 }
                 break stream;

@@ -19,6 +19,6 @@ mod reader;
 pub use client::{Client, Context};
 pub use config::Config;
 pub use conn::Conn;
-pub use msgs::{Cls, Dpub, Fin, Mpub, Msg, NsqCmd, Pub, Requeue, Touch, ConnMsg, ConnMsgInfo};
+pub use msgs::{Cls, Cmd, ConnMsg, ConnMsgInfo, Dpub, Fin, Mpub, Msg, NsqCmd, Pub, Requeue, Touch};
 pub use producer::Producer;
 pub use reader::Consumer;

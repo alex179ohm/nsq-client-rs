@@ -84,8 +84,8 @@ pub fn write_cmd(buf: &mut BytesMut, cmd: &str) {
     write_n(buf);
 }
 
-pub fn write_msg(buf: &mut BytesMut, msg: &str) {
-    let msg_as_bytes = msg.as_bytes();
+pub fn write_msg(buf: &mut BytesMut, msg: Vec<u8>) {
+    let msg_as_bytes = msg.as_slice();
     let msg_len = msg_as_bytes.len();
     let size = 4 + msg_len;
     check_and_reserve(buf, size);
@@ -94,16 +94,13 @@ pub fn write_msg(buf: &mut BytesMut, msg: &str) {
 }
 
 /// write multiple messages (aka msub command).
-pub fn write_mmsg(buf: &mut BytesMut, msgs: &[String]) {
-    let mut body_size: usize = 0;
-    for msg in msgs {
-        body_size += msg.as_bytes().len();
-    }
-    check_and_reserve(buf, body_size);
-    buf.put_u32_be(body_size as u32);
+pub fn write_mmsg(buf: &mut BytesMut, msgs: Vec<Vec<u8>>) {
     let len = msgs.len();
+    let body_size = (msgs.iter().fold(0, |sum, e| sum + (e.len() + 4) as i32) + 4) as usize;
+    check_and_reserve(buf, body_size + 4);
+    buf.put_u32_be(body_size as u32);
     buf.put_u32_be(len as u32);
     for msg in msgs {
-        write_msg(buf, msg.as_str());
+        write_msg(buf, msg);
     }
 }

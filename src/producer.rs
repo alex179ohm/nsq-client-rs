@@ -21,8 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-pub trait Producer {
-    type Context;
-    fn started(&mut self, _ctx: &mut Self::Context) {}
-    fn publish(&mut self, ctx: &mut Self::Context);
+use crate::msgs::Cmd;
+pub trait Producer: Clone + Copy + Send + Sync + 'static {
+    fn publish(&self) -> Cmd;
 }

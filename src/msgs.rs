@@ -39,7 +39,7 @@ const REQ: &str = "REQ";
 
 pub trait NsqCmd: Send {
     fn cmd(&self) -> String;
-    fn msg(&self) -> Vec<String> {
+    fn msg(&self) -> Vec<Vec<u8>> {
         vec![]
     }
     fn as_cmd(&self) -> Cmd {
@@ -50,11 +50,11 @@ pub trait NsqCmd: Send {
 #[derive(Debug, Clone)]
 pub struct Cmd {
     pub cmd: String,
-    pub msg: Vec<String>,
+    pub msg: Vec<Vec<u8>>,
 }
 
 impl Cmd {
-    fn new(cmd: String, msg: Vec<String>) -> Cmd {
+    fn new(cmd: String, msg: Vec<Vec<u8>>) -> Cmd {
         Cmd { cmd, msg }
     }
 }
@@ -64,7 +64,7 @@ impl NsqCmd for Cmd {
         self.cmd.clone()
     }
 
-    fn msg(&self) -> Vec<String> {
+    fn msg(&self) -> Vec<Vec<u8>> {
         self.msg.clone()
     }
 }
@@ -74,9 +74,9 @@ pub trait Message: Send + 'static {}
 pub struct Fin(pub String);
 pub struct Touch(pub String);
 pub struct Requeue(pub String, pub u32);
-pub struct Pub(pub String, pub String);
-pub struct Mpub(pub String, pub Vec<String>);
-pub struct Dpub(pub String, pub u32, pub Vec<String>);
+pub struct Pub(pub String, pub Vec<u8>);
+pub struct Mpub(pub String, pub Vec<Vec<u8>>);
+pub struct Dpub(pub String, pub u32, pub Vec<u8>);
 pub struct Identify(pub String);
 pub struct Subscribe(pub String, pub String);
 pub struct Auth(pub String);
@@ -101,8 +101,8 @@ impl NsqCmd for Auth {
         AUTH.to_owned()
     }
 
-    fn msg(&self) -> Vec<String> {
-        vec![self.0.clone()]
+    fn msg(&self) -> Vec<Vec<u8>> {
+        vec![Vec::from(self.0.as_bytes())]
     }
 }
 
@@ -135,8 +135,8 @@ impl NsqCmd for Identify {
         IDENTIFY.to_owned()
     }
 
-    fn msg(&self) -> Vec<String> {
-        vec![self.0.to_owned()]
+    fn msg(&self) -> Vec<Vec<u8>> {
+        vec![Vec::from(self.0.as_bytes())]
     }
 }
 
@@ -163,8 +163,8 @@ impl NsqCmd for Pub {
         format!("{} {}", PUB, self.0)
     }
 
-    fn msg(&self) -> Vec<String> {
-        vec![self.1.clone()]
+    fn msg(&self) -> Vec<Vec<u8>> {
+        vec![Vec::from(self.0.as_bytes())]
     }
 }
 
@@ -173,7 +173,7 @@ impl NsqCmd for Mpub {
         format!("{} {}", MPUB, self.0)
     }
 
-    fn msg(&self) -> Vec<String> {
+    fn msg(&self) -> Vec<Vec<u8>> {
         self.1.clone()
     }
 }
@@ -183,8 +183,8 @@ impl NsqCmd for Dpub {
         format!("{} {} {}", DPUB, self.0, self.1)
     }
 
-    fn msg(&self) -> Vec<String> {
-        self.2.clone()
+    fn msg(&self) -> Vec<Vec<u8>> {
+        vec![self.2.clone()]
     }
 }
 
