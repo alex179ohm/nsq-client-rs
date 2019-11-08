@@ -672,11 +672,11 @@ where
                 let lock = &*connected_var;
                 info!("Handler spawned");
                 loop {
-                    //let connected = lock.lock().unwrap();
-                    //if !*connected {
-                    //    debug!("closing thread");
-                    //    break;
-                    //}
+                    let connected = lock.lock().unwrap();
+                    if !*connected {
+                        debug!("closing thread");
+                        break;
+                    }
                     let cmd: Cmd = boxed.publish();
                     ctx.send(cmd);
                 }
