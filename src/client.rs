@@ -320,24 +320,24 @@ where
                                                 ))
                                                 .unwrap();
                                             info!("[{}] authentication {}", self.addr, resp);
+                                            conn.state = State::Subscribe;
+                                        }
+                                        State::Subscribe => {
                                             if self.topic.len() == 0 && self.channel.len() == 0 {
                                                 conn.state = State::Started;
                                             } else {
-                                                conn.state = State::Subscribe;
+                                                let resp = conn
+                                                    .get_response(format!(
+                                                        "[{}] authentication failed",
+                                                        self.addr
+                                                    ))
+                                                    .unwrap();
+                                                info!(
+                                                    "[{}] subscribe channel: {} topic: {} {}",
+                                                    self.addr, self.channel, self.topic, resp
+                                                );
+                                                conn.state = State::Rdy;
                                             }
-                                        }
-                                        State::Subscribe => {
-                                            let resp = conn
-                                                .get_response(format!(
-                                                    "[{}] authentication failed",
-                                                    self.addr
-                                                ))
-                                                .unwrap();
-                                            info!(
-                                                "[{}] subscribe channel: {} topic: {} {}",
-                                                self.addr, self.channel, self.topic, resp
-                                            );
-                                            conn.state = State::Rdy;
                                         }
                                         _ => {}
                                     }
@@ -359,7 +359,14 @@ where
                                         None => {}
                                     },
                                     State::Subscribe => {
-                                        conn.subscribe(self.topic.clone(), self.channel.clone());
+                                        if self.topic.len() == 0 && self.channel.len() == 0 {
+                                            conn.state = State::Started;
+                                        } else {
+                                            conn.subscribe(
+                                                self.topic.clone(),
+                                                self.channel.clone(),
+                                            );
+                                        }
                                     }
                                     State::Rdy => {
                                         conn.rdy(self.rdy);
