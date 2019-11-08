@@ -164,7 +164,7 @@ impl NsqCmd for Pub {
     }
 
     fn msg(&self) -> Vec<Vec<u8>> {
-        vec![Vec::from(self.0.as_bytes())]
+        vec![Vec::from(self.1.as_bytes())]
     }
 }
 
