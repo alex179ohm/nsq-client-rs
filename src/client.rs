@@ -322,8 +322,9 @@ where
                                             info!("[{}] authentication {}", self.addr, resp);
                                             if self.topic.len() == 0 && self.channel.len() == 0 {
                                                 conn.state = State::Started;
+                                            } else {
+                                                conn.state = State::Subscribe;
                                             }
-                                            conn.state = State::Subscribe;
                                         }
                                         State::Subscribe => {
                                             let resp = conn
